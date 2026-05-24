@@ -1,0 +1,25 @@
+:root{--bg:#f3f4f6;--card:#fff;--dark:#111827;--muted:#6b7280;--border:#e5e7eb;--primary:#2563eb;--danger:#dc2626;--ok:#16a34a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:#111827}
+header{background:#111827;color:#fff;padding:18px 24px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:24px;margin:0}
+header p{margin:4px 0 0;color:#d1d5db}
+main{padding:20px;max-width:1500px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.grid{display:grid;gap:18px}.grid.two{grid-template-columns:2fr 1fr}
+h2{margin:0 0 14px}h3{margin:18px 0 8px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-weight:700;margin:8px 0;color:#374151}
+input,select,textarea{display:block;width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;margin-top:5px;font-size:14px}
+input[type=checkbox]{display:inline-block;width:auto;margin-right:6px}
+.btn{display:inline-block;border:0;border-radius:9px;padding:10px 14px;text-decoration:none;cursor:pointer;background:#e5e7eb;color:#111827;font-weight:700}
+.btn.primary{background:var(--primary);color:#fff}.btn.danger{background:var(--danger);color:#fff}.btn.light{background:#fff;color:#111827}.btn.small{padding:7px 10px;font-size:13px}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+table{width:100%;border-collapse:collapse;margin:10px 0 14px}
+th,td{border-bottom:1px solid var(--border);padding:10px;text-align:left;vertical-align:top}
+tr.unread td{font-weight:700}
+.alerts{margin-bottom:15px}.alert{padding:12px;border-radius:9px;margin-bottom:8px}.alert.success{background:#dcfce7}.alert.danger{background:#fee2e2}.alert.warning{background:#fef3c7}
+pre{white-space:pre-wrap;background:#f9fafb;border:1px solid var(--border);padding:12px;border-radius:9px;max-height:500px;overflow:auto}
+.files{display:flex;flex-direction:column;gap:7px;max-height:330px;overflow:auto}.files a{color:#2563eb;text-decoration:none}
+.big{font-size:34px;font-weight:800;margin:0}
+@media(max-width:900px){.grid.two,.row{grid-template-columns:1fr}main{padding:12px}table{font-size:13px}}
