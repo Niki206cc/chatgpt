@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="card" method="post" action="{{ url_for('send_preview_route', index=index) }}">
+  <h2>Anteprima articolo</h2>
+  <label>Titolo / oggetto email
+    <input name="article_title" value="{{ article_title }}">
+  </label>
+  <label>Articolo HTML per WordPress
+    <textarea name="html_article" rows="22">{{ html_article }}</textarea>
+  </label>
+
+  <div class="row">
+    <label>Immagine da allegare
+      <select name="image_filename">
+        <option value="">Nessuna immagine</option>
+        {% for img in image_names %}
+          <option value="{{ img }}">{{ img }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Mittente conferma
+      <input name="sender_email" value="{{ sender_email }}">
+    </label>
+  </div>
+
+  <label class="check">
+    <input type="checkbox" name="send_confirmation" {% if sender_email %}checked{% endif %}>
+    Invia conferma di presa in carico al mittente
+  </label>
+
+  <button class="btn primary" type="submit">Invia questa mail</button>
+</form>
+{% endblock %}
