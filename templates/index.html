@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="grid two">
-  <form class="card" method="post" action="{{ url_for('save_config_route') }}">
+  <details class="card">
+  <summary style="cursor:pointer;font-weight:700;font-size:18px;">
+    Configurazione mail, SMTP e AI
+  </summary>
+
+  <form method="post" action="{{ url_for('save_config_route') }}">
     <h2>Configurazione salvata</h2>
     <div class="tabs">
       <h3>Casella comunicati</h3>
