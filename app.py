@@ -741,13 +741,29 @@ def send_preview_route(index):
 
 @app.post("/delete-mails")
 def delete_mails_route():
+    global MAIL_CACHE
+
     cfg = load_config()
+
     try:
         selected = [int(x) for x in request.form.getlist("mail_indexes")]
         items = [MAIL_CACHE[i] for i in selected if 0 <= i < len(MAIL_CACHE)]
+
+        if not items:
+            flash("Nessuna mail selezionata.", "warning")
+            return redirect(url_for("index"))
+
         delete_messages(items, cfg)
+
+        selected_set = set(selected)
+        MAIL_CACHE = [
+            item for i, item in enumerate(MAIL_CACHE)
+            if i not in selected_set
+        ]
+
         flash(f"Cancellate {len(items)} mail dalla casella.", "success")
-        return redirect(url_for("load_mails_route"))
+        return redirect(url_for("index"))
+
     except Exception as e:
         log_exception("Errore cancellazione mail", e)
         flash(f"Errore cancellazione mail: {type(e).__name__}: {e}", "danger")
