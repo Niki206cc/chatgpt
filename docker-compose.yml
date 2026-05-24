@@ -9,7 +9,10 @@ services:
       - TZ=Europe/Rome
       - DATA_DIR=/data
       - ATTACHMENTS_DIR=/attachments
-      - FLASK_SECRET=9fK2xPqL8sVtW3nR6zY1bC4mD7uH5eJ0QxT2aL9p
     volumes:
-      - ./data:/data
-      - ./attachments:/attachments
+      - automazione_articoli_data:/data
+      - automazione_articoli_attachments:/attachments
+
+volumes:
+  automazione_articoli_data:
+  automazione_articoli_attachments:
