@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>{{ subject }}</h2>
+  <p><strong>Mittente:</strong> {{ sender }}</p>
+  <p><strong>Data:</strong> {{ date }}</p>
+  <form method="post" action="{{ url_for('generate_route', index=index) }}">
+    <button class="btn primary" type="submit">Crea anteprima articolo con AI</button>
+  </form>
+</section>
+
+<section class="grid two">
+  <div class="card">
+    <h2>Testo mail</h2>
+    <pre>{{ body or "Nessun testo trovato." }}</pre>
+  </div>
+  <div class="card">
+    <h2>Testo estratto da documenti</h2>
+    <pre>{{ documents_text or "Nessun testo estratto dagli allegati." }}</pre>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Allegati salvati</h2>
+  <div class="files">
+    {% for f in attachments %}
+      <a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>
+    {% else %}
+      <p>Nessun allegato.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
