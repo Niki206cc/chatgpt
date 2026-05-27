@@ -45,7 +45,7 @@ except Exception:
     docx = None
 
 
-APP_TITLE = "Automazione articoli Montagne & Paesi"
+APP_TITLE = "Comunicati Stampa ed AI di Nicola Trussardi"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 ATTACHMENTS_DIR = Path(os.environ.get("ATTACHMENTS_DIR", "/attachments"))
 CONFIG_FILE = DATA_DIR / "config_automazione.txt"
@@ -274,8 +274,8 @@ def bytes_to_readable(size_bytes):
 
 
 def italian_today_string():
-    weekdays = ["lunedì","martedì","mercoledì","giovedì","venerdì","sabato","domenica"]
-    months = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"]
+    weekdays = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    months = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
     try:
         now = datetime.now(ZoneInfo("Europe/Rome")) if ZoneInfo else datetime.now()
     except Exception:
@@ -355,14 +355,8 @@ def save_config_from_form(form):
         "recipient": form.get("recipient", DESTINATARIO_DEFAULT) or DESTINATARIO_DEFAULT,
     }
     parser["AI"] = {"provider": form.get("ai_provider", "Gemini")}
-    parser["GEMINI"] = {
-        "api_key": form.get("gemini_key", ""),
-        "model": form.get("gemini_model", "gemini-2.5-flash"),
-    }
-    parser["OPENAI"] = {
-        "api_key": form.get("openai_key", ""),
-        "model": form.get("openai_model", "gpt-4.1-mini"),
-    }
+    parser["GEMINI"] = {"api_key": form.get("gemini_key", ""), "model": form.get("gemini_model", "gemini-2.5-flash")}
+    parser["OPENAI"] = {"api_key": form.get("openai_key", ""), "model": form.get("openai_model", "gpt-4.1-mini")}
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         parser.write(f)
 
@@ -443,7 +437,6 @@ def get_bytes_from_imap_fetch(msg_data):
             candidates.append(body)
     if not candidates:
         return None
-    # In alcune risposte IMAP arrivano più tuple: la mail completa è quasi sempre il blocco più grande.
     return max(candidates, key=len)
 
 
@@ -460,8 +453,7 @@ def fetch_imap_raw_email(mail, server_id):
         time.sleep(0.2)
 
     raise RuntimeError(
-        "La mail non è più disponibile o il server IMAP ha restituito una risposta vuota. "
-        "Premi “Carica mail” e riprova."
+        "La mail non è più disponibile o il server IMAP ha restituito una risposta vuota. Premi “Carica mail” e riprova."
         if last_status == "OK"
         else "Impossibile scaricare la mail completa dal server IMAP."
     )
@@ -541,6 +533,11 @@ def delete_messages(items, cfg):
 
     deleted_count = len(items) - len(failed)
     return deleted_count, failed
+
+
+def refresh_mail_cache(cfg):
+    global MAIL_CACHE
+    MAIL_CACHE = fetch_imap_headers(cfg) if cfg["protocol"] == "IMAP" else fetch_pop3_headers(cfg)
 
 
 def clean_title(title):
@@ -692,6 +689,7 @@ def index():
             "sender": sender,
             "date": date,
             "size": bytes_to_readable(item.size_bytes),
+            "size_bytes": int(item.size_bytes or 0),
             "unread": item.is_unread,
         })
     logs = ""
@@ -720,7 +718,7 @@ def load_mails_route():
         if not cfg["in_server"] or not cfg["in_user"] or not cfg["in_password"]:
             flash("Inserisci server, username e password della casella.", "warning")
             return redirect(url_for("index"))
-        MAIL_CACHE = fetch_imap_headers(cfg) if cfg["protocol"] == "IMAP" else fetch_pop3_headers(cfg)
+        refresh_mail_cache(cfg)
         flash(f"Caricate {len(MAIL_CACHE)} mail.", "success")
         log(f"Caricate {len(MAIL_CACHE)} mail")
     except Exception as e:
@@ -791,6 +789,7 @@ TESTO DELLA MAIL:
 
 @app.post("/send-preview/<int:index>")
 def send_preview_route(index):
+    global MAIL_CACHE
     cfg = load_config()
     try:
         title = request.form.get("article_title", "").strip()
@@ -798,14 +797,35 @@ def send_preview_route(index):
         image_filename = request.form.get("image_filename", "").strip()
         sender_email = request.form.get("sender_email", "").strip()
         send_confirmation = bool(request.form.get("send_confirmation"))
+        delete_after_send = bool(request.form.get("delete_after_send"))
         if not title or not html_article:
             flash("Titolo e articolo non possono essere vuoti.", "warning")
             return redirect(url_for("index"))
+
         send_result_email(title, html_article, image_filename, cfg)
         if send_confirmation and sender_email:
             send_confirmation_email_to_sender(sender_email, title, cfg)
-        flash("Email articolo inviata correttamente.", "success")
-        log(f"Email articolo inviata: {title}")
+
+        message = "Email articolo inviata correttamente."
+
+        if delete_after_send and 0 <= index < len(MAIL_CACHE):
+            item_to_delete = MAIL_CACHE[index]
+            deleted_count, failed = delete_messages([item_to_delete], cfg)
+            if failed or deleted_count == 0:
+                message += " Attenzione: non sono riuscito a cancellare automaticamente la mail originale."
+                flash(message, "warning")
+            else:
+                try:
+                    refresh_mail_cache(cfg)
+                except Exception as refresh_error:
+                    log_exception("Errore aggiornamento elenco dopo cancellazione automatica", refresh_error)
+                    MAIL_CACHE = [item for item in MAIL_CACHE if item.server_id != item_to_delete.server_id]
+                message += " Mail originale cancellata automaticamente."
+                flash(message, "success")
+        else:
+            flash(message, "success")
+
+        log(f"Email articolo inviata: {title}; cancellazione automatica mail: {delete_after_send}")
     except Exception as e:
         log_exception("Errore invio email", e)
         flash(f"Errore invio email: {type(e).__name__}: {e}", "danger")
@@ -815,9 +835,7 @@ def send_preview_route(index):
 @app.post("/delete-mails")
 def delete_mails_route():
     global MAIL_CACHE
-
     cfg = load_config()
-
     try:
         selected = [int(x) for x in request.form.getlist("mail_indexes")]
         items = [MAIL_CACHE[i] for i in selected if 0 <= i < len(MAIL_CACHE)]
@@ -829,17 +847,14 @@ def delete_mails_route():
         deleted_count, failed = delete_messages(items, cfg)
 
         try:
-            MAIL_CACHE = fetch_imap_headers(cfg) if cfg["protocol"] == "IMAP" else fetch_pop3_headers(cfg)
+            refresh_mail_cache(cfg)
         except Exception as refresh_error:
             log_exception("Errore aggiornamento elenco dopo cancellazione", refresh_error)
             selected_set = set(selected)
             MAIL_CACHE = [item for i, item in enumerate(MAIL_CACHE) if i not in selected_set and item.server_id not in failed]
 
         if failed:
-            flash(
-                f"Cancellate {deleted_count} mail. {len(failed)} non sono state confermate dal server: ricarica la casella e riprova.",
-                "warning"
-            )
+            flash(f"Cancellate {deleted_count} mail. {len(failed)} non sono state confermate dal server: ricarica la casella e riprova.", "warning")
         else:
             flash(f"Cancellate {deleted_count} mail dalla casella.", "success")
 
