@@ -23,6 +23,18 @@
     </label>
   </div>
 
+  {% if image_names %}
+    <h3>Anteprima immagini disponibili</h3>
+    <div class="thumb-grid">
+      {% for img in image_names %}
+        <a class="thumb" href="{{ url_for('view_attachment', filename=img) }}" target="_blank" title="{{ img }}">
+          <img src="{{ url_for('view_attachment', filename=img) }}" alt="{{ img }}">
+          <span>{{ img }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   <label class="check">
     <input type="checkbox" name="send_confirmation" {% if sender_email %}checked{% endif %}>
     Invia conferma di presa in carico al mittente
