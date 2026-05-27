@@ -1,4 +1,3 @@
-
 import os
 import ssl
 import imaplib
@@ -8,6 +7,7 @@ import configparser
 import traceback
 import logging
 import shutil
+import time
 from pathlib import Path
 from datetime import datetime
 from email import policy
@@ -207,19 +207,32 @@ def save_attachments_and_extract_text(msg):
     counter = 0
     ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     for part in msg.walk():
-        if part.get_content_disposition() != "attachment":
+        disposition = part.get_content_disposition()
+        content_type = part.get_content_type()
+        original_filename = part.get_filename()
+
+        if disposition not in ("attachment", "inline") and not original_filename:
             continue
-        original_filename = part.get_filename() or f"allegato_{counter + 1}"
+
         payload = part.get_payload(decode=True)
         if not payload:
             continue
+
         counter += 1
+        if not original_filename:
+            ext = content_type.split("/")[-1].lower()
+            if ext == "jpeg":
+                ext = "jpg"
+            original_filename = f"allegato_{counter}.{ext}"
+
         file_path = unique_attachment_path(original_filename, counter)
         file_path.write_bytes(payload)
         suffix = file_path.suffix.lower()
         attachments.append(file_path)
+
         if suffix in IMAGE_EXTENSIONS:
             images.append(file_path)
+
         if suffix in DOCUMENT_EXTENSIONS:
             if suffix == ".pdf":
                 text = extract_pdf_text(file_path)
@@ -231,6 +244,7 @@ def save_attachments_and_extract_text(msg):
                 text = ""
             if text:
                 document_texts.append(f"\n\n--- TESTO ESTRATTO DA ALLEGATO: {file_path.name} ---\n{text}")
+
     return attachments, images, "\n".join(document_texts).strip()
 
 
@@ -363,7 +377,7 @@ def fetch_imap_headers(cfg):
         status, data = mail.uid("search", None, search_query)
         if status != "OK":
             raise RuntimeError("Impossibile cercare le email nella casella IMAP.")
-        uids = data[0].split()[-80:]
+        uids = data[0].split()[-80:] if data and data[0] else []
         for uid in reversed(uids):
             status, msg_data = mail.uid("fetch", uid, "(FLAGS RFC822.SIZE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
             if status != "OK":
@@ -384,6 +398,8 @@ def fetch_imap_headers(cfg):
                             size_bytes = 0
                     if body:
                         header_bytes += body
+            if not header_bytes:
+                continue
             header_msg = BytesParser(policy=policy.default).parsebytes(header_bytes)
             items.append(MailItem("IMAP", uid.decode("ascii"), header_msg, b"\\Seen" not in flags_raw, size_bytes))
     finally:
@@ -417,6 +433,40 @@ def fetch_pop3_headers(cfg):
     return items
 
 
+def get_bytes_from_imap_fetch(msg_data):
+    candidates = []
+    for part in msg_data or []:
+        if not isinstance(part, tuple) or len(part) < 2:
+            continue
+        body = part[1]
+        if isinstance(body, bytes) and body.strip():
+            candidates.append(body)
+    if not candidates:
+        return None
+    # In alcune risposte IMAP arrivano più tuple: la mail completa è quasi sempre il blocco più grande.
+    return max(candidates, key=len)
+
+
+def fetch_imap_raw_email(mail, server_id):
+    fetch_queries = ("(BODY.PEEK[])", "(RFC822)", "(BODY[])")
+    last_status = None
+    for query in fetch_queries:
+        status, msg_data = mail.uid("fetch", server_id, query)
+        last_status = status
+        if status == "OK":
+            raw_email = get_bytes_from_imap_fetch(msg_data)
+            if raw_email:
+                return raw_email
+        time.sleep(0.2)
+
+    raise RuntimeError(
+        "La mail non è più disponibile o il server IMAP ha restituito una risposta vuota. "
+        "Premi “Carica mail” e riprova."
+        if last_status == "OK"
+        else "Impossibile scaricare la mail completa dal server IMAP."
+    )
+
+
 def fetch_full_message_for_item(item, cfg):
     if item.full_msg is not None:
         return item.full_msg
@@ -425,12 +475,7 @@ def fetch_full_message_for_item(item, cfg):
         mail.login(cfg["in_user"], cfg["in_password"])
         mail.select("INBOX")
         try:
-            status, msg_data = mail.uid("fetch", item.server_id, "(BODY.PEEK[])")
-            if status != "OK":
-                raise RuntimeError("Impossibile scaricare la mail completa.")
-            raw_email = next((part[1] for part in msg_data if isinstance(part, tuple)), None)
-            if raw_email is None:
-                raise RuntimeError("Risposta IMAP senza contenuto email.")
+            raw_email = fetch_imap_raw_email(mail, item.server_id)
             item.full_msg = BytesParser(policy=policy.default).parsebytes(raw_email)
         finally:
             mail.logout()
@@ -448,26 +493,54 @@ def fetch_full_message_for_item(item, cfg):
 
 def delete_messages(items, cfg):
     if not items:
-        return
+        return 0, []
+
+    failed = []
+
     if cfg["protocol"] == "IMAP":
-        mail = imaplib.IMAP4_SSL(cfg["in_server"], int(cfg["in_port"]), timeout=30)
+        mail = imaplib.IMAP4_SSL(cfg["in_server"], int(cfg["in_port"]), timeout=45)
         mail.login(cfg["in_user"], cfg["in_password"])
         mail.select("INBOX")
         try:
             for item in items:
-                mail.uid("store", item.server_id, "+FLAGS", "(\\Deleted)")
-            mail.expunge()
+                ok = False
+                for _ in range(2):
+                    status, _ = mail.uid("store", item.server_id, "+FLAGS.SILENT", r"(\Deleted)")
+                    if status == "OK":
+                        ok = True
+                        break
+                    time.sleep(0.3)
+                if not ok:
+                    failed.append(item.server_id)
+
+            if len(failed) < len(items):
+                mail.expunge()
+                try:
+                    mail.close()
+                except Exception:
+                    pass
         finally:
-            mail.logout()
+            try:
+                mail.logout()
+            except Exception:
+                pass
     else:
-        pop = poplib.POP3_SSL(cfg["in_server"], int(cfg["in_port"]), timeout=30)
+        pop = poplib.POP3_SSL(cfg["in_server"], int(cfg["in_port"]), timeout=45)
         pop.user(cfg["in_user"])
         pop.pass_(cfg["in_password"])
         try:
             for item in sorted(items, key=lambda x: int(x.server_id), reverse=True):
-                pop.dele(int(item.server_id))
+                try:
+                    response = pop.dele(int(item.server_id))
+                    if not response or not response[0].startswith(b"+OK"):
+                        failed.append(item.server_id)
+                except Exception:
+                    failed.append(item.server_id)
         finally:
             pop.quit()
+
+    deleted_count = len(items) - len(failed)
+    return deleted_count, failed
 
 
 def clean_title(title):
@@ -753,15 +826,24 @@ def delete_mails_route():
             flash("Nessuna mail selezionata.", "warning")
             return redirect(url_for("index"))
 
-        delete_messages(items, cfg)
+        deleted_count, failed = delete_messages(items, cfg)
 
-        selected_set = set(selected)
-        MAIL_CACHE = [
-            item for i, item in enumerate(MAIL_CACHE)
-            if i not in selected_set
-        ]
+        try:
+            MAIL_CACHE = fetch_imap_headers(cfg) if cfg["protocol"] == "IMAP" else fetch_pop3_headers(cfg)
+        except Exception as refresh_error:
+            log_exception("Errore aggiornamento elenco dopo cancellazione", refresh_error)
+            selected_set = set(selected)
+            MAIL_CACHE = [item for i, item in enumerate(MAIL_CACHE) if i not in selected_set and item.server_id not in failed]
 
-        flash(f"Cancellate {len(items)} mail dalla casella.", "success")
+        if failed:
+            flash(
+                f"Cancellate {deleted_count} mail. {len(failed)} non sono state confermate dal server: ricarica la casella e riprova.",
+                "warning"
+            )
+        else:
+            flash(f"Cancellate {deleted_count} mail dalla casella.", "success")
+
+        log(f"Cancellazione mail richiesta: {len(items)}; cancellate: {deleted_count}; fallite: {len(failed)}")
         return redirect(url_for("index"))
 
     except Exception as e:
@@ -787,6 +869,15 @@ def clear_attachments_route():
         log_exception("Errore pulizia allegati", e)
         flash(f"Errore pulizia allegati: {type(e).__name__}: {e}", "danger")
     return redirect(url_for("index"))
+
+
+@app.route("/attachments/view/<path:filename>")
+def view_attachment(filename):
+    safe = Path(filename).name
+    path = ATTACHMENTS_DIR / safe
+    if not path.exists():
+        abort(404)
+    return send_from_directory(ATTACHMENTS_DIR, safe, as_attachment=False)
 
 
 @app.route("/attachments/<path:filename>")
