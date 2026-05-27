@@ -9,8 +9,8 @@
 <body>
 <header>
   <div>
-    <h1>Automazione articoli Montagne & Paesi</h1>
-    <p>Dashboard web per Raspberry / Portainer</p>
+    <h1>Comunicati Stampa ed AI di Nicola Trussardi</h1>
+    <p>Dashboard web per comunicati stampa, articoli e gestione mail</p>
   </div>
   <a class="btn light" href="{{ url_for('index') }}">Dashboard</a>
 </header>
@@ -26,5 +26,6 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
