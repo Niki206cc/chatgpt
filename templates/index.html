@@ -1,10 +1,75 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="grid two">
-  <details class="card">
-  <summary style="cursor:pointer;font-weight:700;font-size:18px;">
-    Configurazione mail, SMTP e AI
-  </summary>
+<section class="card">
+  <div class="bar">
+    <h2>Mail trovate</h2>
+    <form method="post" action="{{ url_for('load_mails_route') }}">
+      <button class="btn primary" type="submit">Carica mail</button>
+    </form>
+  </div>
+
+  <form method="post" action="{{ url_for('delete_mails_route') }}" onsubmit="return confirm('Cancellare le mail selezionate dal server?');">
+    <div class="table-actions">
+      <label class="check all-check">
+        <input type="checkbox" id="select-all-mails">
+        Seleziona tutte le mail visibili
+      </label>
+      {% if mails %}
+        <button class="btn danger" type="submit">Cancella mail selezionate</button>
+      {% endif %}
+    </div>
+
+    <table id="mails-table" class="sortable-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th><button type="button" class="sort-btn" data-sort="subject">Oggetto</button></th>
+          <th><button type="button" class="sort-btn" data-sort="sender">Mittente</button></th>
+          <th>Data</th>
+          <th><button type="button" class="sort-btn" data-sort="size">Dimensione</button></th>
+          <th>Azioni</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for mail in mails %}
+        <tr class="{% if mail.unread %}unread{% endif %}" data-subject="{{ mail.subject|lower }}" data-sender="{{ mail.sender|lower }}" data-size="{{ mail.size_bytes }}">
+          <td><input class="mail-checkbox" type="checkbox" name="mail_indexes" value="{{ mail.i }}"></td>
+          <td>{% if mail.unread %}● {% endif %}{{ mail.subject }}</td>
+          <td>{{ mail.sender }}</td>
+          <td>{{ mail.date }}</td>
+          <td>{{ mail.size }}</td>
+          <td>
+            <a class="btn small" href="{{ url_for('view_mail', index=mail.i) }}">Apri</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">Premi “Carica mail” per leggere la casella.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Cartella allegati</h2>
+  <p class="big">{{ files|length }} file</p>
+  <p>{{ images|length }} immagini · {{ docs|length }} documenti · {{ total_size }}</p>
+  <form method="post" action="{{ url_for('clear_attachments_route') }}" onsubmit="return confirm('Vuoi eliminare tutti i file nella cartella allegati?');">
+    <button class="btn danger" type="submit">Svuota cartella allegati</button>
+  </form>
+
+  <h3>File presenti</h3>
+  <div class="files">
+    {% for f in files[:60] %}
+      <a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>
+    {% else %}
+      <p>Nessun allegato salvato.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<details class="card">
+  <summary class="section-summary">Configurazione mail, SMTP e AI</summary>
   <form method="post" action="{{ url_for('save_config_route') }}">
     <h2>Configurazione salvata</h2>
     <div class="tabs">
@@ -61,78 +126,11 @@
       </div>
     </div>
     <button class="btn primary" type="submit">Salva configurazione</button>
-    </form>
+  </form>
 </details>
 
-  <aside class="card">
-    <h2>Cartella allegati</h2>
-    <p class="big">{{ files|length }} file</p>
-    <p>{{ images|length }} immagini · {{ docs|length }} documenti · {{ total_size }}</p>
-    <form method="post" action="{{ url_for('clear_attachments_route') }}" onsubmit="return confirm('Vuoi eliminare tutti i file nella cartella allegati?');">
-      <button class="btn danger" type="submit">Svuota cartella allegati</button>
-    </form>
-
-    {% if images %}
-      <h3>Anteprima immagini</h3>
-      <div class="thumb-grid">
-        {% for img in images[:12] %}
-          <a class="thumb" href="{{ url_for('view_attachment', filename=img.name) }}" target="_blank" title="{{ img.name }}">
-            <img src="{{ url_for('view_attachment', filename=img.name) }}" alt="{{ img.name }}">
-            <span>{{ img.name }}</span>
-          </a>
-        {% endfor %}
-      </div>
-    {% endif %}
-
-    <h3>File presenti</h3>
-    <div class="files">
-      {% for f in files[:30] %}
-        <a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>
-      {% else %}
-        <p>Nessun allegato salvato.</p>
-      {% endfor %}
-    </div>
-  </aside>
-</section>
-
-<section class="card">
-  <div class="bar">
-    <h2>Mail trovate</h2>
-    <form method="post" action="{{ url_for('load_mails_route') }}">
-      <button class="btn primary" type="submit">Carica mail</button>
-    </form>
-  </div>
-
-  <form method="post" action="{{ url_for('delete_mails_route') }}" onsubmit="return confirm('Cancellare le mail selezionate dal server?');">
-    <table>
-      <thead>
-        <tr><th></th><th>Oggetto</th><th>Mittente</th><th>Data</th><th>Dimensione</th><th>Azioni</th></tr>
-      </thead>
-      <tbody>
-      {% for mail in mails %}
-        <tr class="{% if mail.unread %}unread{% endif %}">
-          <td><input type="checkbox" name="mail_indexes" value="{{ mail.i }}"></td>
-          <td>{% if mail.unread %}● {% endif %}{{ mail.subject }}</td>
-          <td>{{ mail.sender }}</td>
-          <td>{{ mail.date }}</td>
-          <td>{{ mail.size }}</td>
-          <td>
-            <a class="btn small" href="{{ url_for('view_mail', index=mail.i) }}">Apri</a>
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="6">Premi “Carica mail” per leggere la casella.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% if mails %}
-      <button class="btn danger" type="submit">Cancella mail selezionate</button>
-    {% endif %}
-  </form>
-</section>
-
 <details class="card log-box">
-  <summary>Log applicazione</summary>
+  <summary class="section-summary">Log applicazione</summary>
   <pre>{{ logs }}</pre>
 </details>
 {% endblock %}
