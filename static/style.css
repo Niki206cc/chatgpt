@@ -22,4 +22,10 @@ tr.unread td{font-weight:700}
 pre{white-space:pre-wrap;background:#f9fafb;border:1px solid var(--border);padding:12px;border-radius:9px;max-height:500px;overflow:auto}
 .files{display:flex;flex-direction:column;gap:7px;max-height:330px;overflow:auto}.files a{color:#2563eb;text-decoration:none}
 .big{font-size:34px;font-weight:800;margin:0}
-@media(max-width:900px){.grid.two,.row{grid-template-columns:1fr}main{padding:12px}table{font-size:13px}}
+.log-box summary{cursor:pointer;font-weight:700;font-size:18px}
+.log-box pre{margin-top:14px}
+.thumb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin:10px 0 16px}
+.thumb{display:flex;flex-direction:column;gap:6px;border:1px solid var(--border);border-radius:10px;padding:8px;background:#f9fafb;color:#2563eb;text-decoration:none;min-width:0}
+.thumb img{width:100%;height:92px;object-fit:cover;border-radius:8px;background:#e5e7eb}
+.thumb span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:900px){.grid.two,.row{grid-template-columns:1fr}main{padding:12px}table{font-size:13px}.thumb-grid{grid-template-columns:repeat(2,1fr)}}
