@@ -22,6 +22,19 @@
 
 <section class="card">
   <h2>Allegati salvati</h2>
+
+  {% if images %}
+    <h3>Anteprima immagini</h3>
+    <div class="thumb-grid">
+      {% for img in images %}
+        <a class="thumb" href="{{ url_for('view_attachment', filename=img.name) }}" target="_blank" title="{{ img.name }}">
+          <img src="{{ url_for('view_attachment', filename=img.name) }}" alt="{{ img.name }}">
+          <span>{{ img.name }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   <div class="files">
     {% for f in attachments %}
       <a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>
