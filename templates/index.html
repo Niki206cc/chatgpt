@@ -4,7 +4,7 @@
   <div class="bar">
     <h2>Mail trovate</h2>
     <form method="post" action="{{ url_for('load_mails_route') }}">
-      <button class="btn primary" type="submit">Carica mail</button>
+      <button class="btn primary icon-btn" type="submit" title="Carica mail" aria-label="Carica mail">✉️</button>
     </form>
   </div>
 
@@ -15,7 +15,7 @@
         Seleziona tutte le mail visibili
       </label>
       {% if mails %}
-        <button class="btn danger" type="submit">Cancella mail selezionate</button>
+        <button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button>
       {% endif %}
     </div>
 
@@ -39,7 +39,7 @@
           <td>{{ mail.date }}</td>
           <td>{{ mail.size }}</td>
           <td>
-            <a class="btn small" href="{{ url_for('view_mail', index=mail.i) }}">Apri</a>
+            <a class="btn small icon-btn" href="{{ url_for('view_mail', index=mail.i) }}" title="Apri mail" aria-label="Apri mail">📂</a>
           </td>
         </tr>
       {% else %}
@@ -47,6 +47,16 @@
       {% endfor %}
       </tbody>
     </table>
+
+    {% if mails %}
+      <div class="table-actions bottom-actions">
+        <label class="check all-check">
+          <input type="checkbox" id="select-all-mails-bottom">
+          Seleziona tutte le mail visibili
+        </label>
+        <button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button>
+      </div>
+    {% endif %}
   </form>
 </section>
 
@@ -133,4 +143,18 @@
   <summary class="section-summary">Log applicazione</summary>
   <pre>{{ logs }}</pre>
 </details>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const top = document.getElementById('select-all-mails');
+    const bottom = document.getElementById('select-all-mails-bottom');
+    const boxes = () => Array.from(document.querySelectorAll('.mail-checkbox'));
+    function setAll(checked) {
+      boxes().forEach(function (box) { box.checked = checked; });
+      if (top) top.checked = checked;
+      if (bottom) bottom.checked = checked;
+    }
+    if (top) top.addEventListener('change', function () { setAll(top.checked); });
+    if (bottom) bottom.addEventListener('change', function () { setAll(bottom.checked); });
+  });
+</script>
 {% endblock %}
