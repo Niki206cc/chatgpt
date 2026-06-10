@@ -4,9 +4,15 @@
   <h2>{{ subject }}</h2>
   <p><strong>Mittente:</strong> {{ sender }}</p>
   <p><strong>Data:</strong> {{ date }}</p>
-  <form method="post" action="{{ url_for('generate_route', index=index) }}">
-    <button class="btn primary" type="submit">Crea anteprima articolo con AI</button>
-  </form>
+
+  <div class="table-actions">
+    <form method="post" action="{{ url_for('generate_route', index=index) }}">
+      <button class="btn primary icon-btn" type="submit" title="Crea anteprima articolo con AI" aria-label="Crea anteprima articolo con AI">✨</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_one_mail_route', index=index) }}" onsubmit="return confirm('Cancellare questa mail dal server?');">
+      <button class="btn danger icon-btn" type="submit" title="Cancella questa mail" aria-label="Cancella questa mail">🗑️</button>
+    </form>
+  </div>
 </section>
 
 <section class="grid two">
