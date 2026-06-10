@@ -43,6 +43,19 @@ def previews():
     return out
 
 
+def largest_image_name(images):
+    valid = []
+    for image in images or []:
+        try:
+            valid.append((image.stat().st_size, image.name))
+        except Exception:
+            continue
+    if not valid:
+        return ''
+    valid.sort(reverse=True)
+    return valid[0][1]
+
+
 def fixed_index():
     cfg = base.load_config()
     files, images, docs, size = base.attachment_stats()
@@ -98,7 +111,8 @@ def fixed_generate_route(index):
         article_title, html_article = base.generate_article(source_text, cfg)
         sender_email = base.extract_sender_email(msg)
         image_names = [p.name for p in images]
-        return render_template('preview.html', title=base.APP_TITLE, index=item.server_id, article_title=article_title, html_article=html_article, image_names=image_names, sender_email=sender_email)
+        selected_image = largest_image_name(images)
+        return render_template('preview.html', title=base.APP_TITLE, index=item.server_id, article_title=article_title, html_article=html_article, image_names=image_names, selected_image=selected_image, sender_email=sender_email)
     except Exception as e:
         base.log_exception('Errore generazione articolo', e)
         flash(f'Errore generazione articolo: {type(e).__name__}: {e}', 'danger')
@@ -178,9 +192,31 @@ def fixed_delete_mails_route():
     return redirect(url_for('index'))
 
 
+def fixed_delete_one_mail_route(index):
+    cfg = base.load_config()
+    try:
+        item = find_item(index, cfg, refresh=False)
+        deleted_count, failed = base.delete_messages([item], cfg)
+        try:
+            base.refresh_mail_cache(cfg)
+        except Exception as re:
+            base.log_exception('Errore aggiornamento elenco dopo cancellazione singola', re)
+            if not failed and deleted_count:
+                base.MAIL_CACHE = [m for m in base.MAIL_CACHE if str(m.server_id) != str(item.server_id)]
+        if failed or deleted_count == 0:
+            flash('La mail non è stata cancellata dal server. Ricarica la casella e riprova.', 'warning')
+        else:
+            flash('Mail cancellata dalla casella.', 'success')
+    except Exception as e:
+        base.log_exception('Errore cancellazione diretta mail', e)
+        flash(f'Errore cancellazione mail: {type(e).__name__}: {e}', 'danger')
+    return redirect(url_for('index'))
+
+
 app.view_functions['index'] = fixed_index
 app.view_functions['load_mails_route'] = fixed_load_mails_route
 app.view_functions['view_mail'] = fixed_view_mail
 app.view_functions['generate_route'] = fixed_generate_route
 app.view_functions['send_preview_route'] = fixed_send_preview_route
 app.view_functions['delete_mails_route'] = fixed_delete_mails_route
+app.add_url_rule('/delete-mail/<path:index>', endpoint='delete_one_mail_route', view_func=fixed_delete_one_mail_route, methods=['POST'])
