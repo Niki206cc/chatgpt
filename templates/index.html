@@ -143,6 +143,17 @@
   <summary class="section-summary">Log applicazione</summary>
   <pre>{{ logs }}</pre>
 </details>
+
+<details class="card log-box">
+  <summary class="section-summary">Conferme inviate</summary>
+  <div class="table-actions">
+    <form method="post" action="{{ url_for('clear_confirmation_logs_route') }}" onsubmit="return confirm('Svuotare lo storico delle conferme inviate?');">
+      <button class="btn danger icon-btn" type="submit" title="Svuota storico conferme" aria-label="Svuota storico conferme">🗑️</button>
+    </form>
+  </div>
+  <pre>{{ confirmation_logs or "Nessuna conferma registrata." }}</pre>
+</details>
+
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     const top = document.getElementById('select-all-mails');
