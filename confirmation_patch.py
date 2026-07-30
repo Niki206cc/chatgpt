@@ -5,6 +5,32 @@ app = fixed.app
 
 CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
 
+ALLOWED_CATEGORIES = {
+    'nazionali-ed-internazionali',
+    'notizie-nazionali',
+    'notizie-internazionali',
+    'provincia-di-bergamo',
+    'bergamo-ed-hinterland',
+    'valseriana',
+    'valbrembana',
+    'valleimagna',
+    'vallecavallina',
+    'provincia-di-brescia',
+    'brescia-ed-hinterland',
+    'vallecamonica',
+    'sebino',
+    'franciacorta-notizie',
+    'valle-trompia',
+    'provincia-di-sondrio',
+    'valtellina',
+    'alta-valtellina',
+    'media-valtellina',
+    'sondrio-ed-hinterland',
+    'salute',
+    'tecnologia',
+    'wine',
+}
+
 
 def write_confirmation_log(email, title, status='OK', error=''):
     try:
@@ -28,6 +54,18 @@ def read_confirmation_log(limit=300):
     except Exception as exc:
         base.log_exception('Errore lettura storico conferme', exc)
         return ''
+
+
+def build_postie_subject(title, selected_categories):
+    categories = []
+    seen = set()
+    for category in selected_categories:
+        category = str(category or '').strip()
+        if category in ALLOWED_CATEGORIES and category not in seen:
+            categories.append(category)
+            seen.add(category)
+    prefix = ' '.join(f'[{category}]' for category in categories)
+    return f'{prefix} {title}'.strip(), categories
 
 
 def patched_index():
@@ -89,12 +127,16 @@ def patched_send_preview_route(index):
         html_article = request.form.get('html_article', '').strip()
         image_filename = request.form.get('image_filename', '').strip()
         sender_email = request.form.get('sender_email', '').strip()
+        selected_categories = request.form.getlist('categories')
         send_confirmation = bool(request.form.get('send_confirmation'))
         delete_after_send = bool(request.form.get('delete_after_send'))
         if not title or not html_article:
             flash('Titolo e articolo non possono essere vuoti.', 'warning')
             return redirect(url_for('index'))
-        base.send_result_email(title, html_article, image_filename, cfg)
+
+        postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
+        base.send_result_email(postie_subject, html_article, image_filename, cfg)
+
         if send_confirmation and sender_email:
             try:
                 base.send_confirmation_email_to_sender(sender_email, title, cfg)
@@ -102,7 +144,13 @@ def patched_send_preview_route(index):
             except Exception as conf_exc:
                 write_confirmation_log(sender_email, title, 'ERRORE', f'{type(conf_exc).__name__}: {conf_exc}')
                 raise
+
         msg = 'Email articolo inviata correttamente.'
+        if accepted_categories:
+            msg += ' Categorie: ' + ', '.join(accepted_categories) + '.'
+        else:
+            msg += ' Nessuna categoria specifica selezionata: verrà usata quella predefinita di Postie.'
+
         if delete_after_send:
             try:
                 item_to_delete = fixed.find_item(index, cfg, refresh=False)
@@ -120,7 +168,7 @@ def patched_send_preview_route(index):
                 flash(msg, 'warning')
         else:
             flash(msg, 'success')
-        base.log(f'Email articolo inviata: {title}; cancellazione automatica mail: {delete_after_send}')
+        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; cancellazione automatica mail: {delete_after_send}')
     except Exception as exc:
         base.log_exception('Errore invio email', exc)
         flash(f'Errore invio email: {type(exc).__name__}: {exc}', 'danger')
