@@ -5,30 +5,30 @@ app = fixed.app
 
 CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
 
-ALLOWED_CATEGORIES = {
-    'nazionali-ed-internazionali',
-    'notizie-nazionali',
-    'notizie-internazionali',
-    'provincia-di-bergamo',
-    'bergamo-ed-hinterland',
-    'valseriana',
-    'valbrembana',
-    'valleimagna',
-    'vallecavallina',
-    'provincia-di-brescia',
-    'brescia-ed-hinterland',
-    'vallecamonica',
-    'sebino',
-    'franciacorta-notizie',
-    'valle-trompia',
-    'provincia-di-sondrio',
-    'valtellina',
-    'alta-valtellina',
-    'media-valtellina',
-    'sondrio-ed-hinterland',
-    'salute',
-    'tecnologia',
-    'wine',
+CATEGORY_NAMES = {
+    'nazionali-ed-internazionali': 'Nazionali ed Internazionali',
+    'notizie-nazionali': 'Notizie Nazionali',
+    'notizie-internazionali': 'Notizie Internazionali',
+    'provincia-di-bergamo': 'Provincia di Bergamo',
+    'bergamo-ed-hinterland': 'Bergamo ed Hinterland',
+    'valseriana': 'Val Seriana',
+    'valbrembana': 'Val Brembana',
+    'valleimagna': 'Valle Imagna',
+    'vallecavallina': 'Valle Cavallina',
+    'provincia-di-brescia': 'Provincia di Brescia',
+    'brescia-ed-hinterland': 'Brescia ed Hinterland',
+    'vallecamonica': 'Valle Camonica',
+    'sebino': 'Sebino',
+    'franciacorta-notizie': 'Franciacorta Notizie',
+    'valle-trompia': 'Valle Trompia',
+    'provincia-di-sondrio': 'Provincia di Sondrio',
+    'valtellina': 'Valtellina',
+    'alta-valtellina': 'Alta Valtellina',
+    'media-valtellina': 'Media Valtellina',
+    'sondrio-ed-hinterland': 'Sondrio ed Hinterland',
+    'salute': 'Salute',
+    'tecnologia': 'Tecnologia',
+    'wine': 'Wine',
 }
 
 
@@ -57,15 +57,18 @@ def read_confirmation_log(limit=300):
 
 
 def build_postie_subject(title, selected_categories):
-    categories = []
+    category_names = []
+    accepted_slugs = []
     seen = set()
-    for category in selected_categories:
-        category = str(category or '').strip()
-        if category in ALLOWED_CATEGORIES and category not in seen:
-            categories.append(category)
-            seen.add(category)
-    prefix = ' '.join(f'[{category}]' for category in categories)
-    return f'{prefix} {title}'.strip(), categories
+    for category_slug in selected_categories:
+        category_slug = str(category_slug or '').strip()
+        category_name = CATEGORY_NAMES.get(category_slug)
+        if category_name and category_slug not in seen:
+            category_names.append(category_name)
+            accepted_slugs.append(category_slug)
+            seen.add(category_slug)
+    prefix = ' '.join(f'[{category_name}]' for category_name in category_names)
+    return f'{prefix} {title}'.strip(), accepted_slugs
 
 
 def patched_index():
