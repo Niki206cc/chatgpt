@@ -6,6 +6,7 @@ app = fixed.app
 CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
 DEFAULT_IMAGE_URL = 'https://www.montagneepaesi.com/wp-content/uploads/2026/07/opengraph_qrcode-scaled-1.png'
 DEFAULT_IMAGE_FILENAME = 'immagine-default-montagne-e-paesi.png'
+MIN_EDITORIAL_IMAGE_BYTES = 50 * 1024
 
 CATEGORY_NAMES = {
     'nazionali-ed-internazionali': 'Nazionali ed Internazionali',
@@ -39,25 +40,48 @@ def ensure_default_image():
 
     base.ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     image_path = base.ATTACHMENTS_DIR / DEFAULT_IMAGE_FILENAME
-    if image_path.exists() and image_path.stat().st_size > 0:
+    if image_path.exists() and image_path.stat().st_size > 1024:
         return image_path
 
     request = Request(
         DEFAULT_IMAGE_URL,
-        headers={'User-Agent': 'Mozilla/5.0 MontagnePaesiPressManager/1.0'},
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Referer': 'https://www.montagneepaesi.com/',
+        },
     )
-    with urlopen(request, timeout=30) as response:
-        data = response.read()
-        content_type = (response.headers.get('Content-Type') or '').lower()
+    try:
+        with urlopen(request, timeout=30) as response:
+            data = response.read()
+            content_type = (response.headers.get('Content-Type') or '').lower()
+    except Exception as exc:
+        raise RuntimeError(f'Impossibile scaricare l’immagine predefinita: {type(exc).__name__}: {exc}') from exc
 
-    if not data:
-        raise RuntimeError('Il server ha restituito un file immagine vuoto.')
+    if not data or len(data) < 1024:
+        raise RuntimeError('Il server ha restituito un file immagine vuoto o troppo piccolo.')
     if content_type and not content_type.startswith('image/'):
         raise RuntimeError(f'Il file predefinito non risulta un’immagine: {content_type}')
 
     image_path.write_bytes(data)
-    base.log(f'Immagine predefinita scaricata: {image_path.name}')
+    base.log(f'Immagine predefinita scaricata: {image_path.name} ({len(data)} byte)')
     return image_path
+
+
+def editorial_images(images):
+    valid = []
+    for image in images or []:
+        try:
+            if image.name == DEFAULT_IMAGE_FILENAME:
+                valid.append(image)
+                continue
+            if image.stat().st_size >= MIN_EDITORIAL_IMAGE_BYTES:
+                valid.append(image)
+            else:
+                base.log(f'Immagine ignorata perché probabilmente logo/firma: {image.name} ({image.stat().st_size} byte)')
+        except Exception as exc:
+            base.log_exception('Errore controllo immagine allegata', exc)
+    return valid
 
 
 def write_confirmation_log(email, title, status='OK', error=''):
@@ -138,10 +162,11 @@ def patched_generate_route(index):
         article_title, html_article = base.generate_article(source_text, cfg)
         sender_email = base.extract_sender_email(msg)
 
+        images = editorial_images(images)
         if not images:
             default_image = ensure_default_image()
             images = [default_image]
-            flash('Il comunicato non conteneva immagini: è stata selezionata automaticamente l’immagine predefinita.', 'info')
+            flash('Nessuna foto editoriale trovata: è stata selezionata automaticamente l’immagine predefinita.', 'info')
 
         image_names = [p.name for p in images]
         selected_image = fixed.largest_image_name(images)
