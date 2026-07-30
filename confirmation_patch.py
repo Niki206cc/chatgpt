@@ -73,7 +73,6 @@ def editorial_images(images):
     for image in images or []:
         try:
             if image.name == DEFAULT_IMAGE_FILENAME:
-                valid.append(image)
                 continue
             if image.stat().st_size >= MIN_EDITORIAL_IMAGE_BYTES:
                 valid.append(image)
@@ -162,14 +161,19 @@ def patched_generate_route(index):
         article_title, html_article = base.generate_article(source_text, cfg)
         sender_email = base.extract_sender_email(msg)
 
-        images = editorial_images(images)
-        if not images:
-            default_image = ensure_default_image()
-            images = [default_image]
+        editorial = editorial_images(images)
+        default_image = ensure_default_image()
+        available_images = list(editorial)
+        if all(image.name != default_image.name for image in available_images):
+            available_images.append(default_image)
+
+        if editorial:
+            selected_image = fixed.largest_image_name(editorial)
+        else:
+            selected_image = default_image.name
             flash('Nessuna foto editoriale trovata: è stata selezionata automaticamente l’immagine predefinita.', 'info')
 
-        image_names = [p.name for p in images]
-        selected_image = fixed.largest_image_name(images)
+        image_names = [p.name for p in available_images]
         return render_template(
             'preview.html',
             title=base.APP_TITLE,
