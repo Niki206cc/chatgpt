@@ -35,6 +35,50 @@
     </div>
   {% endif %}
 
+  <section class="card">
+    <h3>Categorie WordPress</h3>
+    <p>Puoi selezionare una o più categorie. Se non selezioni nulla verrà usata la categoria predefinita configurata in Postie.</p>
+
+    <div class="grid two">
+      <div>
+        <h3>🌍 Nazionali</h3>
+        <label class="check"><input type="checkbox" name="categories" value="nazionali-ed-internazionali"> nazionali-ed-internazionali</label>
+        <label class="check"><input type="checkbox" name="categories" value="notizie-nazionali"> notizie-nazionali</label>
+        <label class="check"><input type="checkbox" name="categories" value="notizie-internazionali"> notizie-internazionali</label>
+
+        <h3>🟢 Bergamo</h3>
+        <label class="check"><input type="checkbox" name="categories" value="provincia-di-bergamo"> provincia-di-bergamo</label>
+        <label class="check"><input type="checkbox" name="categories" value="bergamo-ed-hinterland"> bergamo-ed-hinterland</label>
+        <label class="check"><input type="checkbox" name="categories" value="valseriana"> valseriana</label>
+        <label class="check"><input type="checkbox" name="categories" value="valbrembana"> valbrembana</label>
+        <label class="check"><input type="checkbox" name="categories" value="valleimagna"> valleimagna</label>
+        <label class="check"><input type="checkbox" name="categories" value="vallecavallina"> vallecavallina</label>
+
+        <h3>🟣 Sondrio</h3>
+        <label class="check"><input type="checkbox" name="categories" value="provincia-di-sondrio"> provincia-di-sondrio</label>
+        <label class="check"><input type="checkbox" name="categories" value="valtellina"> valtellina</label>
+        <label class="check"><input type="checkbox" name="categories" value="alta-valtellina"> alta-valtellina</label>
+        <label class="check"><input type="checkbox" name="categories" value="media-valtellina"> media-valtellina</label>
+        <label class="check"><input type="checkbox" name="categories" value="sondrio-ed-hinterland"> sondrio-ed-hinterland</label>
+      </div>
+
+      <div>
+        <h3>🔵 Brescia</h3>
+        <label class="check"><input type="checkbox" name="categories" value="provincia-di-brescia"> provincia-di-brescia</label>
+        <label class="check"><input type="checkbox" name="categories" value="brescia-ed-hinterland"> brescia-ed-hinterland</label>
+        <label class="check"><input type="checkbox" name="categories" value="vallecamonica"> vallecamonica</label>
+        <label class="check"><input type="checkbox" name="categories" value="sebino"> sebino</label>
+        <label class="check"><input type="checkbox" name="categories" value="franciacorta-notizie"> franciacorta-notizie</label>
+        <label class="check"><input type="checkbox" name="categories" value="valle-trompia"> valle-trompia</label>
+
+        <h3>🟡 Tematiche</h3>
+        <label class="check"><input type="checkbox" name="categories" value="salute"> salute</label>
+        <label class="check"><input type="checkbox" name="categories" value="tecnologia"> tecnologia</label>
+        <label class="check"><input type="checkbox" name="categories" value="wine"> wine</label>
+      </div>
+    </div>
+  </section>
+
   <label class="check">
     <input type="checkbox" name="send_confirmation" {% if sender_email %}checked{% endif %}>
     Invia conferma di presa in carico al mittente
