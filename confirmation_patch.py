@@ -4,6 +4,8 @@ base = fixed.base
 app = fixed.app
 
 CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
+DEFAULT_IMAGE_URL = 'https://www.montagneepaesi.com/wp-content/uploads/2026/07/opengraph_qrcode-scaled-1.png'
+DEFAULT_IMAGE_FILENAME = 'immagine-default-montagne-e-paesi.png'
 
 CATEGORY_NAMES = {
     'nazionali-ed-internazionali': 'Nazionali ed Internazionali',
@@ -30,6 +32,32 @@ CATEGORY_NAMES = {
     'tecnologia': 'Tecnologia',
     'wine': 'Wine',
 }
+
+
+def ensure_default_image():
+    from urllib.request import Request, urlopen
+
+    base.ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    image_path = base.ATTACHMENTS_DIR / DEFAULT_IMAGE_FILENAME
+    if image_path.exists() and image_path.stat().st_size > 0:
+        return image_path
+
+    request = Request(
+        DEFAULT_IMAGE_URL,
+        headers={'User-Agent': 'Mozilla/5.0 MontagnePaesiPressManager/1.0'},
+    )
+    with urlopen(request, timeout=30) as response:
+        data = response.read()
+        content_type = (response.headers.get('Content-Type') or '').lower()
+
+    if not data:
+        raise RuntimeError('Il server ha restituito un file immagine vuoto.')
+    if content_type and not content_type.startswith('image/'):
+        raise RuntimeError(f'Il file predefinito non risulta un’immagine: {content_type}')
+
+    image_path.write_bytes(data)
+    base.log(f'Immagine predefinita scaricata: {image_path.name}')
+    return image_path
 
 
 def write_confirmation_log(email, title, status='OK', error=''):
@@ -106,11 +134,27 @@ def patched_generate_route(index):
         if len(source_text) < 100:
             flash('Testo insufficiente per generare un articolo.', 'warning')
             return redirect(url_for('view_mail', index=item.server_id))
+
         article_title, html_article = base.generate_article(source_text, cfg)
         sender_email = base.extract_sender_email(msg)
+
+        if not images:
+            default_image = ensure_default_image()
+            images = [default_image]
+            flash('Il comunicato non conteneva immagini: è stata selezionata automaticamente l’immagine predefinita.', 'info')
+
         image_names = [p.name for p in images]
         selected_image = fixed.largest_image_name(images)
-        return render_template('preview.html', title=base.APP_TITLE, index=item.server_id, article_title=article_title, html_article=html_article, image_names=image_names, selected_image=selected_image, sender_email=sender_email)
+        return render_template(
+            'preview.html',
+            title=base.APP_TITLE,
+            index=item.server_id,
+            article_title=article_title,
+            html_article=html_article,
+            image_names=image_names,
+            selected_image=selected_image,
+            sender_email=sender_email,
+        )
     except Exception as exc:
         base.log_exception('Errore generazione articolo', exc)
         flash(f'Errore generazione articolo: {type(exc).__name__}: {exc}', 'danger')
@@ -137,6 +181,9 @@ def patched_send_preview_route(index):
             flash('Titolo e articolo non possono essere vuoti.', 'warning')
             return redirect(url_for('index'))
 
+        if not image_filename:
+            image_filename = ensure_default_image().name
+
         postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
         base.send_result_email(postie_subject, html_article, image_filename, cfg)
 
@@ -153,6 +200,8 @@ def patched_send_preview_route(index):
             msg += ' Categorie: ' + ', '.join(accepted_categories) + '.'
         else:
             msg += ' Nessuna categoria specifica selezionata: verrà usata quella predefinita di Postie.'
+        if image_filename == DEFAULT_IMAGE_FILENAME:
+            msg += ' Utilizzata l’immagine predefinita.'
 
         if delete_after_send:
             try:
@@ -171,7 +220,7 @@ def patched_send_preview_route(index):
                 flash(msg, 'warning')
         else:
             flash(msg, 'success')
-        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; cancellazione automatica mail: {delete_after_send}')
+        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; immagine: {image_filename}; cancellazione automatica mail: {delete_after_send}')
     except Exception as exc:
         base.log_exception('Errore invio email', exc)
         flash(f'Errore invio email: {type(exc).__name__}: {exc}', 'danger')
