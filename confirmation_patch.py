@@ -1,3 +1,4 @@
+import re
 import fixed_app as fixed
 
 base = fixed.base
@@ -108,6 +109,39 @@ def save_uploaded_article_image(upload):
     return path
 
 
+def normalize_generated_title(title, source_text):
+    """Converte lo stile Title Case in normale italiano, preservando nomi propri presenti nella fonte e sigle."""
+    title = base.clean_title(title).strip()
+    word_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?")
+    first_word = True
+
+    def replace_word(match):
+        nonlocal first_word
+        word = match.group(0)
+        letters = ''.join(ch for ch in word if ch.isalpha())
+
+        if first_word:
+            first_word = False
+            return word
+        if not letters:
+            return word
+        if letters.isupper() and len(letters) > 1:
+            return word
+        if not word[0].isupper():
+            return word
+
+        # Se la stessa parola compare con questa maiuscola nel comunicato originale,
+        # la consideriamo un nome proprio/ente/luogo e la preserviamo.
+        exact_pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)")
+        if exact_pattern.search(source_text):
+            return word
+
+        return word.lower()
+
+    normalized = word_re.sub(replace_word, title)
+    return normalized.strip()
+
+
 def write_confirmation_log(email, title, status='OK', error=''):
     try:
         from datetime import datetime
@@ -186,6 +220,7 @@ def patched_generate_route(index):
             return redirect(url_for('view_mail', index=item.server_id))
 
         article_title, html_article = base.generate_article(source_text, cfg)
+        article_title = normalize_generated_title(article_title, source_text)
         sender_email = base.extract_sender_email(msg)
 
         editorial = editorial_images(images)
