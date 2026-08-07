@@ -7,6 +7,7 @@ CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
 DEFAULT_IMAGE_URL = 'https://www.montagneepaesi.com/wp-content/uploads/2026/07/opengraph_qrcode-scaled-1.png'
 DEFAULT_IMAGE_FILENAME = 'immagine-default-montagne-e-paesi.png'
 MIN_EDITORIAL_IMAGE_BYTES = 50 * 1024
+UPLOAD_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 
 CATEGORY_NAMES = {
     'nazionali-ed-internazionali': 'Nazionali ed Internazionali',
@@ -83,6 +84,30 @@ def editorial_images(images):
     return valid
 
 
+def save_uploaded_article_image(upload):
+    from pathlib import Path
+    from datetime import datetime
+
+    if not upload or not upload.filename:
+        raise RuntimeError('Seleziona un file immagine da caricare.')
+
+    safe_name = base.safe_filename(upload.filename)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in UPLOAD_IMAGE_EXTENSIONS:
+        raise RuntimeError('Formato immagine non supportato. Usa JPG, PNG o WEBP.')
+
+    payload = upload.read()
+    if not payload:
+        raise RuntimeError('Il file immagine caricato è vuoto.')
+
+    base.ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"immagine-articolo-{datetime.now().strftime('%Y%m%d-%H%M%S')}{suffix}"
+    path = base.ATTACHMENTS_DIR / filename
+    path.write_bytes(payload)
+    base.log(f'Immagine articolo caricata manualmente: {filename} ({len(payload)} byte)')
+    return path
+
+
 def write_confirmation_log(email, title, status='OK', error=''):
     try:
         from datetime import datetime
@@ -145,6 +170,8 @@ def patched_index():
 
 def patched_generate_route(index):
     from flask import flash, redirect, render_template, url_for
+    from bs4 import BeautifulSoup
+
     cfg = base.load_config()
     item = None
     try:
@@ -162,18 +189,22 @@ def patched_generate_route(index):
         sender_email = base.extract_sender_email(msg)
 
         editorial = editorial_images(images)
-        default_image = ensure_default_image()
-        available_images = list(editorial)
-        if all(image.name != default_image.name for image in available_images):
-            available_images.append(default_image)
+        has_editorial_images = bool(editorial)
+        image_names = [p.name for p in editorial]
+        selected_image = fixed.largest_image_name(editorial) if editorial else ''
 
-        if editorial:
-            selected_image = fixed.largest_image_name(editorial)
-        else:
-            selected_image = default_image.name
-            flash('Nessuna foto editoriale trovata: è stata selezionata automaticamente l’immagine predefinita.', 'info')
+        default_image_available = False
+        try:
+            default_image = ensure_default_image()
+            default_image_available = True
+            if default_image.name not in image_names:
+                image_names.append(default_image.name)
+        except Exception as default_exc:
+            base.log_exception('Errore preparazione immagine predefinita', default_exc)
 
-        image_names = [p.name for p in available_images]
+        article_text = BeautifulSoup(html_article, 'html.parser').get_text(' ', strip=True)
+        image_prompt = f'Generami un’immagine per questo articolo: {article_title}. {article_text}'
+
         return render_template(
             'preview.html',
             title=base.APP_TITLE,
@@ -183,6 +214,10 @@ def patched_generate_route(index):
             image_names=image_names,
             selected_image=selected_image,
             sender_email=sender_email,
+            has_editorial_images=has_editorial_images,
+            default_image_filename=DEFAULT_IMAGE_FILENAME,
+            default_image_available=default_image_available,
+            image_prompt=image_prompt,
         )
     except Exception as exc:
         base.log_exception('Errore generazione articolo', exc)
@@ -201,17 +236,25 @@ def patched_send_preview_route(index):
     try:
         title = request.form.get('article_title', '').strip()
         html_article = request.form.get('html_article', '').strip()
-        image_filename = request.form.get('image_filename', '').strip()
         sender_email = request.form.get('sender_email', '').strip()
         selected_categories = request.form.getlist('categories')
         send_confirmation = bool(request.form.get('send_confirmation'))
         delete_after_send = bool(request.form.get('delete_after_send'))
+        image_mode = request.form.get('image_mode', 'existing').strip()
+        image_filename = ''
+
         if not title or not html_article:
             flash('Titolo e articolo non possono essere vuoti.', 'warning')
             return redirect(url_for('index'))
 
-        if not image_filename:
+        if image_mode == 'none':
+            image_filename = ''
+        elif image_mode == 'default':
             image_filename = ensure_default_image().name
+        elif image_mode == 'upload':
+            image_filename = save_uploaded_article_image(request.files.get('image_upload')).name
+        else:
+            image_filename = request.form.get('image_filename', '').strip()
 
         postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
         base.send_result_email(postie_subject, html_article, image_filename, cfg)
@@ -229,8 +272,12 @@ def patched_send_preview_route(index):
             msg += ' Categorie: ' + ', '.join(accepted_categories) + '.'
         else:
             msg += ' Nessuna categoria specifica selezionata: verrà usata quella predefinita di Postie.'
-        if image_filename == DEFAULT_IMAGE_FILENAME:
+        if image_mode == 'none':
+            msg += ' Nessuna immagine allegata.'
+        elif image_mode == 'default':
             msg += ' Utilizzata l’immagine predefinita.'
+        elif image_mode == 'upload':
+            msg += ' Utilizzata l’immagine caricata manualmente.'
 
         if delete_after_send:
             try:
@@ -249,7 +296,7 @@ def patched_send_preview_route(index):
                 flash(msg, 'warning')
         else:
             flash(msg, 'success')
-        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; immagine: {image_filename}; cancellazione automatica mail: {delete_after_send}')
+        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; modalità immagine: {image_mode}; immagine: {image_filename}; cancellazione automatica mail: {delete_after_send}')
     except Exception as exc:
         base.log_exception('Errore invio email', exc)
         flash(f'Errore invio email: {type(exc).__name__}: {exc}', 'danger')
