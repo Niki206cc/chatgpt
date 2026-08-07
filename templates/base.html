@@ -9,7 +9,12 @@
 <body>
 <header>
   <div>
-    <h1>Comunicati Stampa ed AI di Nicola Trussardi</h1>
+    <h1>
+      Comunicati Stampa ed AI di Nicola Trussardi
+      {% if app_version %}
+        <a href="{{ url_for('versions_route') }}" title="Visualizza storico versioni" style="font-size:.52em; vertical-align:middle; text-decoration:none; margin-left:8px;">v{{ app_version }}</a>
+      {% endif %}
+    </h1>
     <p>Dashboard web per comunicati stampa, articoli e gestione mail</p>
   </div>
   <a class="btn light" href="{{ url_for('index') }}">Dashboard</a>
