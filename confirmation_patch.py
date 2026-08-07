@@ -4,8 +4,16 @@ import fixed_app as fixed
 base = fixed.base
 app = fixed.app
 
-APP_VERSION = '2.0.0'
+APP_VERSION = '2.0.1'
 CHANGELOG = [
+    {
+        'version': '2.0.1',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Versione nell’intestazione resa bianca e più leggibile.',
+            'Correzione della pagina Storico versioni per evitare errori del template.',
+        ],
+    },
     {
         'version': '2.0.0',
         'date': '7 agosto 2026',
@@ -204,6 +212,7 @@ def normalize_generated_title(title, source_text):
         nonlocal first_word
         word = match.group(0)
         letters = ''.join(ch for ch in word if ch.isalpha())
+
         if first_word:
             first_word = False
             return word
@@ -213,12 +222,15 @@ def normalize_generated_title(title, source_text):
             return word
         if not word[0].isupper():
             return word
+
         exact_pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)")
         if exact_pattern.search(source_text):
             return word
+
         return word.lower()
 
-    return word_re.sub(replace_word, title).strip()
+    normalized = word_re.sub(replace_word, title)
+    return normalized.strip()
 
 
 def write_confirmation_log(email, title, status='OK', error=''):
@@ -267,12 +279,24 @@ def patched_index():
     logs = ''
     if base.LOG_FILE.exists():
         logs = '\n'.join(base.LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines()[-120:])
-    return render_template('index.html', title=base.APP_TITLE, cfg=cfg, mails=fixed.previews(), files=files, images=images, docs=docs, total_size=base.bytes_to_readable(size), logs=logs, confirmation_logs=read_confirmation_log())
+    return render_template(
+        'index.html',
+        title=base.APP_TITLE,
+        cfg=cfg,
+        mails=fixed.previews(),
+        files=files,
+        images=images,
+        docs=docs,
+        total_size=base.bytes_to_readable(size),
+        logs=logs,
+        confirmation_logs=read_confirmation_log(),
+    )
 
 
 def patched_generate_route(index):
     from flask import flash, redirect, render_template, url_for
     from bs4 import BeautifulSoup
+
     cfg = base.load_config()
     item = None
     try:
@@ -285,13 +309,16 @@ def patched_generate_route(index):
         if len(source_text) < 100:
             flash('Testo insufficiente per generare un articolo.', 'warning')
             return redirect(url_for('view_mail', index=item.server_id))
+
         article_title, html_article = base.generate_article(source_text, cfg)
         article_title = normalize_generated_title(article_title, source_text)
         sender_email = base.extract_sender_email(msg)
+
         editorial = editorial_images(images)
         has_editorial_images = bool(editorial)
         image_names = [p.name for p in editorial]
         selected_image = fixed.largest_image_name(editorial) if editorial else ''
+
         default_image_available = False
         try:
             default_image = ensure_default_image()
@@ -300,9 +327,24 @@ def patched_generate_route(index):
                 image_names.append(default_image.name)
         except Exception as default_exc:
             base.log_exception('Errore preparazione immagine predefinita', default_exc)
+
         article_text = BeautifulSoup(html_article, 'html.parser').get_text(' ', strip=True)
         image_prompt = f'Generami un’immagine per questo articolo: {article_title}. {article_text}'
-        return render_template('preview.html', title=base.APP_TITLE, index=item.server_id, article_title=article_title, html_article=html_article, image_names=image_names, selected_image=selected_image, sender_email=sender_email, has_editorial_images=has_editorial_images, default_image_filename=DEFAULT_IMAGE_FILENAME, default_image_available=default_image_available, image_prompt=image_prompt)
+
+        return render_template(
+            'preview.html',
+            title=base.APP_TITLE,
+            index=item.server_id,
+            article_title=article_title,
+            html_article=html_article,
+            image_names=image_names,
+            selected_image=selected_image,
+            sender_email=sender_email,
+            has_editorial_images=has_editorial_images,
+            default_image_filename=DEFAULT_IMAGE_FILENAME,
+            default_image_available=default_image_available,
+            image_prompt=image_prompt,
+        )
     except Exception as exc:
         base.log_exception('Errore generazione articolo', exc)
         flash(f'Errore generazione articolo: {type(exc).__name__}: {exc}', 'danger')
@@ -326,9 +368,11 @@ def patched_send_preview_route(index):
         delete_after_send = bool(request.form.get('delete_after_send'))
         image_mode = request.form.get('image_mode', 'existing').strip()
         image_filename = ''
+
         if not title or not html_article:
             flash('Titolo e articolo non possono essere vuoti.', 'warning')
             return redirect(url_for('index'))
+
         if image_mode == 'none':
             image_filename = ''
         elif image_mode == 'default':
@@ -337,8 +381,10 @@ def patched_send_preview_route(index):
             image_filename = save_uploaded_article_image(request.files.get('image_upload')).name
         else:
             image_filename = request.form.get('image_filename', '').strip()
+
         postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
         base.send_result_email(postie_subject, html_article, image_filename, cfg)
+
         if send_confirmation and sender_email:
             try:
                 base.send_confirmation_email_to_sender(sender_email, title, cfg)
@@ -346,6 +392,7 @@ def patched_send_preview_route(index):
             except Exception as conf_exc:
                 write_confirmation_log(sender_email, title, 'ERRORE', f'{type(conf_exc).__name__}: {conf_exc}')
                 raise
+
         msg = 'Email articolo inviata correttamente.'
         if accepted_categories:
             msg += ' Categorie: ' + ', '.join(accepted_categories) + '.'
@@ -357,6 +404,7 @@ def patched_send_preview_route(index):
             msg += ' Utilizzata l’immagine predefinita.'
         elif image_mode == 'upload':
             msg += ' Utilizzata l’immagine caricata manualmente.'
+
         if delete_after_send:
             try:
                 item_to_delete = fixed.find_item(index, cfg, refresh=False)
