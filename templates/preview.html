@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<form class="card" method="post" action="{{ url_for('send_preview_route', index=index) }}">
+<form class="card" method="post" action="{{ url_for('send_preview_route', index=index) }}" enctype="multipart/form-data">
   <h2>Anteprima articolo</h2>
   <label>Titolo / oggetto email
     <input name="article_title" value="{{ article_title }}">
@@ -9,30 +9,64 @@
     <textarea name="html_article" rows="22">{{ html_article }}</textarea>
   </label>
 
-  <div class="row">
-    <label>Immagine da allegare
+  {% if not has_editorial_images %}
+  <section class="card">
+    <h3>Immagine articolo</h3>
+    <p>Il comunicato non contiene una foto editoriale valida. Puoi generarne una con ChatGPT e caricarla qui.</p>
+
+    <label>Prompt pronto da copiare
+      <textarea id="image-prompt" rows="6" readonly>{{ image_prompt }}</textarea>
+    </label>
+    <div class="table-actions">
+      <button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById('image-prompt').value)">📋 Copia prompt</button>
+      <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Apri ChatGPT</a>
+    </div>
+
+    <div style="margin-top:16px">
+      <label class="check"><input type="radio" name="image_mode" value="none"> Nessuna immagine</label>
+      <label class="check"><input type="radio" name="image_mode" value="default" checked> Immagine di default</label>
+      <label class="check"><input type="radio" name="image_mode" value="upload"> Carica immagine</label>
+      <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
+    </div>
+
+    {% if default_image_available %}
+      <h3>Immagine di default</h3>
+      <div class="thumb-grid">
+        <a class="thumb" href="{{ url_for('view_attachment', filename=default_image_filename) }}" target="_blank" title="Immagine di default">
+          <img src="{{ url_for('view_attachment', filename=default_image_filename) }}" alt="Immagine di default">
+          <span>Immagine di default</span>
+        </a>
+      </div>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="card">
+    <h3>Immagine da allegare</h3>
+    <label class="check"><input type="radio" name="image_mode" value="existing" checked> Usa una foto del comunicato</label>
+    <label>Foto selezionata
       <select name="image_filename">
-        <option value="">Nessuna immagine</option>
         {% for img in image_names %}
+          {% if img != default_image_filename %}
           <option value="{{ img }}" {% if img == selected_image %}selected{% endif %}>{{ img }}</option>
+          {% endif %}
         {% endfor %}
       </select>
     </label>
-    <label>Mittente conferma
-      <input name="sender_email" value="{{ sender_email }}">
-    </label>
-  </div>
+    <label class="check"><input type="radio" name="image_mode" value="default"> Usa immagine di default</label>
+    <label class="check"><input type="radio" name="image_mode" value="upload"> Carica un’altra immagine</label>
+    <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
+    <label class="check"><input type="radio" name="image_mode" value="none"> Nessuna immagine</label>
 
-  {% if image_names %}
     <h3>Anteprima immagini disponibili</h3>
     <div class="thumb-grid">
       {% for img in image_names %}
         <a class="thumb" href="{{ url_for('view_attachment', filename=img) }}" target="_blank" title="{{ img }}">
           <img src="{{ url_for('view_attachment', filename=img) }}" alt="{{ img }}">
-          <span>{% if img == selected_image %}⭐ {% endif %}{{ img }}</span>
+          <span>{% if img == selected_image %}⭐ {% endif %}{% if img == default_image_filename %}Default · {% endif %}{{ img }}</span>
         </a>
       {% endfor %}
     </div>
+  </section>
   {% endif %}
 
   <section class="card">
@@ -78,6 +112,12 @@
       </div>
     </div>
   </section>
+
+  <div class="row">
+    <label>Mittente conferma
+      <input name="sender_email" value="{{ sender_email }}">
+    </label>
+  </div>
 
   <label class="check">
     <input type="checkbox" name="send_confirmation" {% if sender_email %}checked{% endif %}>
