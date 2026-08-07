@@ -18,8 +18,9 @@
       <textarea id="image-prompt" rows="6" readonly>{{ image_prompt }}</textarea>
     </label>
     <div class="table-actions">
-      <button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById('image-prompt').value)">📋 Copia prompt</button>
+      <button class="btn" id="copy-prompt-btn" type="button">📋 Copia prompt</button>
       <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Apri ChatGPT</a>
+      <span id="copy-prompt-status" aria-live="polite"></span>
     </div>
 
     <div style="margin-top:16px">
@@ -146,26 +147,65 @@
 document.addEventListener('DOMContentLoaded', function () {
   const checkbox = document.getElementById('ai-image-credit');
   const article = document.getElementById('html-article');
-  if (!checkbox || !article) return;
+  const copyButton = document.getElementById('copy-prompt-btn');
+  const promptBox = document.getElementById('image-prompt');
+  const copyStatus = document.getElementById('copy-prompt-status');
 
-  const marker = '<p><em>Immagine generata con AI.</em></p>';
+  if (checkbox && article) {
+    const marker = '<p><em>Immagine generata con AI.</em></p>';
 
-  function removeMarker(text) {
-    return text
-      .replace(/\s*<p><em>Immagine generata con AI\.<\/em><\/p>\s*$/i, '')
-      .replace(/\s*Immagine generata con AI\.?\s*$/i, '')
-      .trim();
-  }
-
-  function syncCredit() {
-    let text = removeMarker(article.value);
-    if (checkbox.checked) {
-      text = text + '\n\n' + marker;
+    function removeMarker(text) {
+      return text
+        .replace(/\s*<p><em>Immagine generata con AI\.<\/em><\/p>\s*$/i, '')
+        .replace(/\s*Immagine generata con AI\.?\s*$/i, '')
+        .trim();
     }
-    article.value = text;
+
+    function syncCredit() {
+      let text = removeMarker(article.value);
+      if (checkbox.checked) {
+        text = text + '\n\n' + marker;
+      }
+      article.value = text;
+    }
+
+    checkbox.addEventListener('change', syncCredit);
   }
 
-  checkbox.addEventListener('change', syncCredit);
+  if (copyButton && promptBox) {
+    copyButton.addEventListener('click', async function () {
+      const text = promptBox.value;
+      let copied = false;
+
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) {
+        copied = false;
+      }
+
+      if (!copied) {
+        try {
+          promptBox.removeAttribute('readonly');
+          promptBox.focus();
+          promptBox.select();
+          promptBox.setSelectionRange(0, promptBox.value.length);
+          copied = document.execCommand('copy');
+          promptBox.setAttribute('readonly', 'readonly');
+        } catch (e) {
+          copied = false;
+          promptBox.setAttribute('readonly', 'readonly');
+        }
+      }
+
+      if (copyStatus) {
+        copyStatus.textContent = copied ? '✓ Prompt copiato' : 'Copia non riuscita: seleziona il testo e usa Ctrl+C';
+        setTimeout(function () { copyStatus.textContent = ''; }, 3500);
+      }
+    });
+  }
 });
 </script>
 {% endblock %}
