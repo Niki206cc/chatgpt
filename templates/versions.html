@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <div class="bar">
+    <div>
+      <h2>Storico versioni</h2>
+      <p>Versione attuale: <strong>v{{ app_version }}</strong></p>
+    </div>
+    <a class="btn" href="{{ url_for('index') }}">← Torna alla dashboard</a>
+  </div>
+</section>
+
+{% for release in changelog %}
+<section class="card">
+  <h2>v{{ release.version }} <small style="font-weight:normal">· {{ release.date }}</small></h2>
+  <ul>
+    {% for change in release.changes %}
+      <li>{{ change }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}
