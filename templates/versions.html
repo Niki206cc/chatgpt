@@ -12,9 +12,9 @@
 
 {% for release in changelog %}
 <section class="card">
-  <h2>v{{ release.version }} <small style="font-weight:normal">· {{ release.date }}</small></h2>
+  <h2>v{{ release['version'] }} <small style="font-weight:normal">· {{ release['date'] }}</small></h2>
   <ul>
-    {% for change in release.changes %}
+    {% for change in release['changes'] %}
       <li>{{ change }}</li>
     {% endfor %}
   </ul>
