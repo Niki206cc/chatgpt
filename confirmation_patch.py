@@ -4,6 +4,81 @@ import fixed_app as fixed
 base = fixed.base
 app = fixed.app
 
+APP_VERSION = '2.0.0'
+CHANGELOG = [
+    {
+        'version': '2.0.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Versione visibile nell’intestazione con pagina storico versioni.',
+            'Correzione del pulsante Copia prompt con fallback compatibile.',
+            'Normalizzazione automatica delle maiuscole nei titoli generati dall’AI.',
+            'Checkbox per aggiungere o rimuovere la dicitura “Immagine generata con AI”.',
+        ],
+    },
+    {
+        'version': '1.9.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Prompt pronto per generare immagini in ChatGPT quando manca una foto.',
+            'Upload manuale di immagini JPG, PNG e WEBP dalla schermata di anteprima.',
+            'Scelta tra nessuna immagine, immagine di default, foto del comunicato o immagine caricata.',
+        ],
+    },
+    {
+        'version': '1.8.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Immagine di default sempre disponibile tra le opzioni selezionabili.',
+            'Selezione automatica della foto editoriale più grande quando presente.',
+            'Filtro dei piccoli loghi e delle immagini di firma sotto i 50 KB.',
+        ],
+    },
+    {
+        'version': '1.7.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Selezione multipla delle categorie WordPress per area geografica e tematica.',
+            'Gestione delle categorie per Postie nell’oggetto dell’email.',
+        ],
+    },
+    {
+        'version': '1.6.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Storico delle email di conferma inviate con log persistente.',
+            'Pannello “Conferme inviate” richiudibile nella dashboard.',
+            'Pulsante per svuotare lo storico conferme.',
+        ],
+    },
+    {
+        'version': '1.5.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Gli errori di generazione AI mantengono aperta la mail corrente.',
+            'Cestino diretto nella mail aperta con ritorno alla dashboard.',
+        ],
+    },
+    {
+        'version': '1.4.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Icone nella dashboard per caricare, aprire e cancellare le mail.',
+            'Cestino anche in fondo alle liste lunghe.',
+            'Log applicazione chiuso di default.',
+        ],
+    },
+    {
+        'version': '1.3.0',
+        'date': '7 agosto 2026',
+        'changes': [
+            'Selezione automatica dell’immagine allegata più grande.',
+            'Migliorata la gestione delle mail tramite identificativi server stabili.',
+            'Correzioni per aperture e cancellazioni di mail non coerenti.',
+        ],
+    },
+]
+
 CONFIRMATION_LOG_FILE = base.DATA_DIR / 'confirmation_log.txt'
 DEFAULT_IMAGE_URL = 'https://www.montagneepaesi.com/wp-content/uploads/2026/07/opengraph_qrcode-scaled-1.png'
 DEFAULT_IMAGE_FILENAME = 'immagine-default-montagne-e-paesi.png'
@@ -35,6 +110,17 @@ CATEGORY_NAMES = {
     'tecnologia': 'Tecnologia',
     'wine': 'Wine',
 }
+
+
+@app.context_processor
+def inject_app_version():
+    return {'app_version': APP_VERSION}
+
+
+@app.route('/versioni')
+def versions_route():
+    from flask import render_template
+    return render_template('versions.html', title=f'{base.APP_TITLE} - Versioni', changelog=CHANGELOG, app_version=APP_VERSION)
 
 
 def ensure_default_image():
@@ -110,7 +196,6 @@ def save_uploaded_article_image(upload):
 
 
 def normalize_generated_title(title, source_text):
-    """Converte lo stile Title Case in normale italiano, preservando nomi propri presenti nella fonte e sigle."""
     title = base.clean_title(title).strip()
     word_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:['’][A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?")
     first_word = True
@@ -119,7 +204,6 @@ def normalize_generated_title(title, source_text):
         nonlocal first_word
         word = match.group(0)
         letters = ''.join(ch for ch in word if ch.isalpha())
-
         if first_word:
             first_word = False
             return word
@@ -129,17 +213,12 @@ def normalize_generated_title(title, source_text):
             return word
         if not word[0].isupper():
             return word
-
-        # Se la stessa parola compare con questa maiuscola nel comunicato originale,
-        # la consideriamo un nome proprio/ente/luogo e la preserviamo.
         exact_pattern = re.compile(rf"(?<!\w){re.escape(word)}(?!\w)")
         if exact_pattern.search(source_text):
             return word
-
         return word.lower()
 
-    normalized = word_re.sub(replace_word, title)
-    return normalized.strip()
+    return word_re.sub(replace_word, title).strip()
 
 
 def write_confirmation_log(email, title, status='OK', error=''):
@@ -188,24 +267,12 @@ def patched_index():
     logs = ''
     if base.LOG_FILE.exists():
         logs = '\n'.join(base.LOG_FILE.read_text(encoding='utf-8', errors='replace').splitlines()[-120:])
-    return render_template(
-        'index.html',
-        title=base.APP_TITLE,
-        cfg=cfg,
-        mails=fixed.previews(),
-        files=files,
-        images=images,
-        docs=docs,
-        total_size=base.bytes_to_readable(size),
-        logs=logs,
-        confirmation_logs=read_confirmation_log(),
-    )
+    return render_template('index.html', title=base.APP_TITLE, cfg=cfg, mails=fixed.previews(), files=files, images=images, docs=docs, total_size=base.bytes_to_readable(size), logs=logs, confirmation_logs=read_confirmation_log())
 
 
 def patched_generate_route(index):
     from flask import flash, redirect, render_template, url_for
     from bs4 import BeautifulSoup
-
     cfg = base.load_config()
     item = None
     try:
@@ -218,16 +285,13 @@ def patched_generate_route(index):
         if len(source_text) < 100:
             flash('Testo insufficiente per generare un articolo.', 'warning')
             return redirect(url_for('view_mail', index=item.server_id))
-
         article_title, html_article = base.generate_article(source_text, cfg)
         article_title = normalize_generated_title(article_title, source_text)
         sender_email = base.extract_sender_email(msg)
-
         editorial = editorial_images(images)
         has_editorial_images = bool(editorial)
         image_names = [p.name for p in editorial]
         selected_image = fixed.largest_image_name(editorial) if editorial else ''
-
         default_image_available = False
         try:
             default_image = ensure_default_image()
@@ -236,24 +300,9 @@ def patched_generate_route(index):
                 image_names.append(default_image.name)
         except Exception as default_exc:
             base.log_exception('Errore preparazione immagine predefinita', default_exc)
-
         article_text = BeautifulSoup(html_article, 'html.parser').get_text(' ', strip=True)
         image_prompt = f'Generami un’immagine per questo articolo: {article_title}. {article_text}'
-
-        return render_template(
-            'preview.html',
-            title=base.APP_TITLE,
-            index=item.server_id,
-            article_title=article_title,
-            html_article=html_article,
-            image_names=image_names,
-            selected_image=selected_image,
-            sender_email=sender_email,
-            has_editorial_images=has_editorial_images,
-            default_image_filename=DEFAULT_IMAGE_FILENAME,
-            default_image_available=default_image_available,
-            image_prompt=image_prompt,
-        )
+        return render_template('preview.html', title=base.APP_TITLE, index=item.server_id, article_title=article_title, html_article=html_article, image_names=image_names, selected_image=selected_image, sender_email=sender_email, has_editorial_images=has_editorial_images, default_image_filename=DEFAULT_IMAGE_FILENAME, default_image_available=default_image_available, image_prompt=image_prompt)
     except Exception as exc:
         base.log_exception('Errore generazione articolo', exc)
         flash(f'Errore generazione articolo: {type(exc).__name__}: {exc}', 'danger')
@@ -277,11 +326,9 @@ def patched_send_preview_route(index):
         delete_after_send = bool(request.form.get('delete_after_send'))
         image_mode = request.form.get('image_mode', 'existing').strip()
         image_filename = ''
-
         if not title or not html_article:
             flash('Titolo e articolo non possono essere vuoti.', 'warning')
             return redirect(url_for('index'))
-
         if image_mode == 'none':
             image_filename = ''
         elif image_mode == 'default':
@@ -290,10 +337,8 @@ def patched_send_preview_route(index):
             image_filename = save_uploaded_article_image(request.files.get('image_upload')).name
         else:
             image_filename = request.form.get('image_filename', '').strip()
-
         postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
         base.send_result_email(postie_subject, html_article, image_filename, cfg)
-
         if send_confirmation and sender_email:
             try:
                 base.send_confirmation_email_to_sender(sender_email, title, cfg)
@@ -301,7 +346,6 @@ def patched_send_preview_route(index):
             except Exception as conf_exc:
                 write_confirmation_log(sender_email, title, 'ERRORE', f'{type(conf_exc).__name__}: {conf_exc}')
                 raise
-
         msg = 'Email articolo inviata correttamente.'
         if accepted_categories:
             msg += ' Categorie: ' + ', '.join(accepted_categories) + '.'
@@ -313,7 +357,6 @@ def patched_send_preview_route(index):
             msg += ' Utilizzata l’immagine predefinita.'
         elif image_mode == 'upload':
             msg += ' Utilizzata l’immagine caricata manualmente.'
-
         if delete_after_send:
             try:
                 item_to_delete = fixed.find_item(index, cfg, refresh=False)
