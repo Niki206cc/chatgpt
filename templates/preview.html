@@ -6,7 +6,7 @@
     <input name="article_title" value="{{ article_title }}">
   </label>
   <label>Articolo HTML per WordPress
-    <textarea name="html_article" rows="22">{{ html_article }}</textarea>
+    <textarea id="html-article" name="html_article" rows="22">{{ html_article }}</textarea>
   </label>
 
   {% if not has_editorial_images %}
@@ -28,6 +28,11 @@
       <label class="check"><input type="radio" name="image_mode" value="upload"> Carica immagine</label>
       <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
     </div>
+
+    <label class="check" style="margin-top:14px">
+      <input type="checkbox" id="ai-image-credit">
+      L'immagine è stata generata con AI
+    </label>
 
     {% if default_image_available %}
       <h3>Immagine di default</h3>
@@ -56,6 +61,11 @@
     <label class="check"><input type="radio" name="image_mode" value="upload"> Carica un’altra immagine</label>
     <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
     <label class="check"><input type="radio" name="image_mode" value="none"> Nessuna immagine</label>
+
+    <label class="check" style="margin-top:14px">
+      <input type="checkbox" id="ai-image-credit">
+      L'immagine è stata generata con AI
+    </label>
 
     <h3>Anteprima immagini disponibili</h3>
     <div class="thumb-grid">
@@ -131,4 +141,31 @@
 
   <button class="btn primary" type="submit">Invia questa mail</button>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const checkbox = document.getElementById('ai-image-credit');
+  const article = document.getElementById('html-article');
+  if (!checkbox || !article) return;
+
+  const marker = '<p><em>Immagine generata con AI.</em></p>';
+
+  function removeMarker(text) {
+    return text
+      .replace(/\s*<p><em>Immagine generata con AI\.<\/em><\/p>\s*$/i, '')
+      .replace(/\s*Immagine generata con AI\.?\s*$/i, '')
+      .trim();
+  }
+
+  function syncCredit() {
+    let text = removeMarker(article.value);
+    if (checkbox.checked) {
+      text = text + '\n\n' + marker;
+    }
+    article.value = text;
+  }
+
+  checkbox.addEventListener('change', syncCredit);
+});
+</script>
 {% endblock %}
