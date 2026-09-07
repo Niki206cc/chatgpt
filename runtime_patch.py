@@ -1,12 +1,19 @@
 import confirmation_patch as cp
 
-# Correzione specifica Postie/WordPress:
-# lo slug è "valseriana", ma il nome reale della categoria WordPress è "Valle Seriana".
+# Correzioni/integrazioni categorie Postie/WordPress.
 cp.CATEGORY_NAMES['valseriana'] = 'Valle Seriana'
+cp.CATEGORY_NAMES['val-gandino'] = 'Val Gandino'
 
 # Versione applicazione
-cp.APP_VERSION = '2.0.2'
+cp.APP_VERSION = '2.0.3'
 cp.CHANGELOG.insert(0, {
+    'version': '2.0.3',
+    'date': '7 settembre 2026',
+    'changes': [
+        'Aggiunta la categoria WordPress Val Gandino (slug: val-gandino).',
+    ],
+})
+cp.CHANGELOG.insert(1, {
     'version': '2.0.2',
     'date': '7 settembre 2026',
     'changes': [
