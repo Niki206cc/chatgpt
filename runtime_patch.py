@@ -17,16 +17,30 @@ try:
 except Exception as exc:
     cp.base.log_exception('Errore aggiunta categoria Val Gandino alla preview', exc)
 
-# Versione applicazione
-cp.APP_VERSION = '2.0.3'
+# Versione applicazione. Viene anche esposta direttamente al contesto Flask
+# per evitare che il template mostri una versione ereditata precedente.
+RUNTIME_APP_VERSION = '2.0.4'
+cp.APP_VERSION = RUNTIME_APP_VERSION
+
+@cp.app.context_processor
+def inject_runtime_app_version():
+    return {'app_version': RUNTIME_APP_VERSION}
+
 cp.CHANGELOG.insert(0, {
+    'version': '2.0.4',
+    'date': '7 settembre 2026',
+    'changes': [
+        'Corretta la visualizzazione della versione: il numero release viene ora passato direttamente dal runtime al template Flask.',
+    ],
+})
+cp.CHANGELOG.insert(1, {
     'version': '2.0.3',
     'date': '7 settembre 2026',
     'changes': [
         'Aggiunta la categoria WordPress Val Gandino (slug: val-gandino) tra le categorie Bergamo.',
     ],
 })
-cp.CHANGELOG.insert(1, {
+cp.CHANGELOG.insert(2, {
     'version': '2.0.2',
     'date': '7 settembre 2026',
     'changes': [
