@@ -15,4 +15,4 @@ RUN mkdir -p /data /attachments
 
 EXPOSE 8080
 
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "confirmation_patch:app"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "runtime_patch:app"]
