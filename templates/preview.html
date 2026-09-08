@@ -12,7 +12,29 @@
   {% if not has_editorial_images %}
   <section class="card">
     <h3>Immagine articolo</h3>
-    <p>Il comunicato non contiene una foto editoriale valida. Puoi generarne una con ChatGPT e caricarla qui.</p>
+    <p>Il comunicato non contiene una foto editoriale valida. Puoi usare la libreria casuale, l'immagine di default oppure generarne/caricarne una.</p>
+
+    <div style="margin-top:16px">
+      {% if random_image_url %}
+      <label class="check"><input type="radio" name="image_mode" value="random" checked> Immagine casuale dalla libreria Montagne & Paesi</label>
+      <input type="hidden" id="random-image-url" name="random_image_url" value="{{ random_image_url }}">
+      <div class="thumb-grid" style="margin-top:10px">
+        <div class="thumb">
+          <img id="random-image-preview" src="{{ random_image_url }}" alt="Immagine casuale">
+          <span id="random-image-name">Immagine casuale</span>
+        </div>
+      </div>
+      <div class="table-actions" style="margin-top:8px">
+        <button class="btn" id="change-random-image-btn" type="button">🎲 Cambia immagine</button>
+        <a class="btn" href="{{ random_library_url }}" target="_blank" rel="noopener">Apri libreria</a>
+        <span id="random-image-status" aria-live="polite"></span>
+      </div>
+      {% endif %}
+      <label class="check"><input type="radio" name="image_mode" value="none"> Nessuna immagine</label>
+      <label class="check"><input type="radio" name="image_mode" value="default" {% if not random_image_url %}checked{% endif %}> Immagine di default</label>
+      <label class="check"><input type="radio" name="image_mode" value="upload"> Carica immagine</label>
+      <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
+    </div>
 
     <label>Prompt pronto da copiare
       <textarea id="image-prompt" rows="6" readonly>{{ image_prompt }}</textarea>
@@ -21,13 +43,6 @@
       <button class="btn" id="copy-prompt-btn" type="button">📋 Copia prompt</button>
       <a class="btn primary" href="https://chatgpt.com/" target="_blank" rel="noopener">Apri ChatGPT</a>
       <span id="copy-prompt-status" aria-live="polite"></span>
-    </div>
-
-    <div style="margin-top:16px">
-      <label class="check"><input type="radio" name="image_mode" value="none"> Nessuna immagine</label>
-      <label class="check"><input type="radio" name="image_mode" value="default" checked> Immagine di default</label>
-      <label class="check"><input type="radio" name="image_mode" value="upload"> Carica immagine</label>
-      <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
     </div>
 
     <label class="check" style="margin-top:14px">
@@ -58,6 +73,23 @@
         {% endfor %}
       </select>
     </label>
+
+    {% if random_image_url %}
+    <label class="check"><input type="radio" name="image_mode" value="random"> Usa immagine casuale dalla libreria Montagne & Paesi</label>
+    <input type="hidden" id="random-image-url" name="random_image_url" value="{{ random_image_url }}">
+    <div class="thumb-grid" style="margin-top:10px">
+      <div class="thumb">
+        <img id="random-image-preview" src="{{ random_image_url }}" alt="Immagine casuale">
+        <span id="random-image-name">Immagine casuale</span>
+      </div>
+    </div>
+    <div class="table-actions" style="margin-top:8px">
+      <button class="btn" id="change-random-image-btn" type="button">🎲 Cambia immagine</button>
+      <a class="btn" href="{{ random_library_url }}" target="_blank" rel="noopener">Apri libreria</a>
+      <span id="random-image-status" aria-live="polite"></span>
+    </div>
+    {% endif %}
+
     <label class="check"><input type="radio" name="image_mode" value="default"> Usa immagine di default</label>
     <label class="check"><input type="radio" name="image_mode" value="upload"> Carica un’altra immagine</label>
     <input type="file" name="image_upload" accept="image/jpeg,image/png,image/webp">
@@ -95,6 +127,7 @@
         <label class="check"><input type="checkbox" name="categories" value="provincia-di-bergamo"> provincia-di-bergamo</label>
         <label class="check"><input type="checkbox" name="categories" value="bergamo-ed-hinterland"> bergamo-ed-hinterland</label>
         <label class="check"><input type="checkbox" name="categories" value="valseriana"> valseriana</label>
+        <label class="check"><input type="checkbox" name="categories" value="val-gandino"> val-gandino</label>
         <label class="check"><input type="checkbox" name="categories" value="valbrembana"> valbrembana</label>
         <label class="check"><input type="checkbox" name="categories" value="valleimagna"> valleimagna</label>
         <label class="check"><input type="checkbox" name="categories" value="vallecavallina"> vallecavallina</label>
@@ -150,6 +183,11 @@ document.addEventListener('DOMContentLoaded', function () {
   const copyButton = document.getElementById('copy-prompt-btn');
   const promptBox = document.getElementById('image-prompt');
   const copyStatus = document.getElementById('copy-prompt-status');
+  const randomButton = document.getElementById('change-random-image-btn');
+  const randomInput = document.getElementById('random-image-url');
+  const randomPreview = document.getElementById('random-image-preview');
+  const randomStatus = document.getElementById('random-image-status');
+  const randomRadio = document.querySelector('input[name="image_mode"][value="random"]');
 
   if (checkbox && article) {
     const marker = '<p><em>Immagine generata con AI.</em></p>';
@@ -203,6 +241,28 @@ document.addEventListener('DOMContentLoaded', function () {
       if (copyStatus) {
         copyStatus.textContent = copied ? '✓ Prompt copiato' : 'Copia non riuscita: seleziona il testo e usa Ctrl+C';
         setTimeout(function () { copyStatus.textContent = ''; }, 3500);
+      }
+    });
+  }
+
+  if (randomButton && randomInput && randomPreview) {
+    randomButton.addEventListener('click', async function () {
+      randomButton.disabled = true;
+      if (randomStatus) randomStatus.textContent = 'Scelta nuova immagine...';
+      try {
+        const response = await fetch('{{ url_for("random_image_route") }}?current=' + encodeURIComponent(randomInput.value), {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok || !data.ok || !data.url) {
+          throw new Error(data.error || 'Impossibile scegliere una nuova immagine');
+        }
+        randomInput.value = data.url;
+        randomPreview.src = data.url + (data.url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+        if (randomRadio) randomRadio.checked = true;
+        if (randomStatus) randomStatus.textContent = '✓ Nuova immagine selezionata';
+      } catch (e) {
+        if (randomStatus) randomStatus.textContent = 'Errore: ' + e.message;
+      } finally {
+        randomButton.disabled = false;
       }
     });
   }
