@@ -3,7 +3,6 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 import json
 import random
-import re
 import time
 
 import confirmation_patch as cp
@@ -14,17 +13,18 @@ cp.CATEGORY_NAMES['val-gandino'] = 'Val Gandino'
 
 # Libreria unica di immagini casuali Montagne & Paesi.
 RANDOM_IMAGE_LIBRARY_URL = 'https://www.montagneepaesi.com/random_images/'
+RANDOM_IMAGE_LIST_URL = urljoin(RANDOM_IMAGE_LIBRARY_URL, 'images.php')
 RANDOM_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
 RANDOM_IMAGE_HISTORY_FILE = cp.base.DATA_DIR / 'random_image_history.json'
 RANDOM_IMAGE_HISTORY_LIMIT = 30
 
 
-def _request(url):
+def _request(url, accept=None):
     return Request(
         url,
         headers={
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'Accept': accept or 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
             'Referer': 'https://www.montagneepaesi.com/',
         },
     )
@@ -45,23 +45,38 @@ def _valid_random_image_url(url):
 
 
 def list_random_images():
-    """Legge la directory pubblica e restituisce gli URL delle immagini supportate."""
-    with urlopen(_request(RANDOM_IMAGE_LIBRARY_URL), timeout=20) as response:
-        html = response.read().decode('utf-8', errors='replace')
+    """Legge images.php e restituisce gli URL completi delle immagini supportate."""
+    try:
+        with urlopen(_request(RANDOM_IMAGE_LIST_URL, 'application/json,text/plain;q=0.9,*/*;q=0.8'), timeout=20) as response:
+            payload = response.read().decode('utf-8', errors='replace')
+            content_type = (response.headers.get('Content-Type') or '').lower()
+    except Exception as exc:
+        raise RuntimeError(f'Impossibile leggere la libreria immagini: {type(exc).__name__}: {exc}') from exc
 
-    hrefs = re.findall(r'''href\s*=\s*["']([^"']+)["']''', html, flags=re.I)
+    try:
+        data = json.loads(payload)
+    except Exception as exc:
+        raise RuntimeError('La libreria immagini non restituisce un JSON valido.') from exc
+
+    if not isinstance(data, list):
+        raise RuntimeError('La libreria immagini deve restituire un elenco JSON di file.')
+
     images = []
     seen = set()
-    for href in hrefs:
-        url = urljoin(RANDOM_IMAGE_LIBRARY_URL, href)
+    for item in data:
+        if not isinstance(item, str):
+            continue
+        filename = item.strip()
+        if not filename:
+            continue
+        url = urljoin(RANDOM_IMAGE_LIBRARY_URL, filename)
         if _valid_random_image_url(url) and url not in seen:
             images.append(url)
             seen.add(url)
 
     if not images:
-        raise RuntimeError(
-            'Nessuna immagine trovata in random_images. Verifica che la cartella mostri l’elenco dei file.'
-        )
+        detail = f' Content-Type: {content_type}.' if content_type else ''
+        raise RuntimeError(f'Nessuna immagine valida trovata in random_images.{detail}')
     return images
 
 
@@ -295,7 +310,7 @@ def runtime_send_preview_route(index):
 
 
 # Versione applicazione. Viene esposta direttamente al contesto Flask.
-RUNTIME_APP_VERSION = '2.1.0'
+RUNTIME_APP_VERSION = '2.1.1'
 cp.APP_VERSION = RUNTIME_APP_VERSION
 
 
@@ -305,6 +320,15 @@ def inject_runtime_app_version():
 
 
 cp.CHANGELOG.insert(0, {
+    'version': '2.1.1',
+    'date': '8 settembre 2026',
+    'changes': [
+        'La libreria immagini casuali ora legge l’elenco da /random_images/images.php in formato JSON.',
+        'La cartella /random_images/ può restare protetta dal directory listing e restituire Forbidden.',
+        'Migliorata la gestione degli errori quando l’endpoint JSON non è disponibile o non restituisce immagini valide.',
+    ],
+})
+cp.CHANGELOG.insert(1, {
     'version': '2.1.0',
     'date': '8 settembre 2026',
     'changes': [
@@ -314,21 +338,21 @@ cp.CHANGELOG.insert(0, {
         'Anti-ripetizione sulle ultime 30 immagini casuali effettivamente pubblicate.',
     ],
 })
-cp.CHANGELOG.insert(1, {
+cp.CHANGELOG.insert(2, {
     'version': '2.0.4',
     'date': '7 settembre 2026',
     'changes': [
         'Corretta la visualizzazione della versione: il numero release viene ora passato direttamente dal runtime al template Flask.',
     ],
 })
-cp.CHANGELOG.insert(2, {
+cp.CHANGELOG.insert(3, {
     'version': '2.0.3',
     'date': '7 settembre 2026',
     'changes': [
         'Aggiunta la categoria WordPress Val Gandino (slug: val-gandino) tra le categorie Bergamo.',
     ],
 })
-cp.CHANGELOG.insert(3, {
+cp.CHANGELOG.insert(4, {
     'version': '2.0.2',
     'date': '7 settembre 2026',
     'changes': [
@@ -337,7 +361,7 @@ cp.CHANGELOG.insert(3, {
     ],
 })
 
-# Sostituisce le route con le versioni v2.1.0.
+# Sostituisce le route con le versioni v2.1.x.
 cp.app.view_functions['generate_route'] = runtime_generate_route
 cp.app.view_functions['send_preview_route'] = runtime_send_preview_route
 if 'random_image_route' not in cp.app.view_functions:
