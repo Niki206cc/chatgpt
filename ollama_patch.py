@@ -1,5 +1,6 @@
 import configparser
 import json
+import re
 from urllib.request import Request, urlopen
 
 import runtime_patch as rp
@@ -68,13 +69,16 @@ LOCALITA'
 Presta particolare attenzione ai nomi dei Comuni, delle valli e delle province. Quando pertinente valorizza naturalmente il contesto territoriale di Bergamo, Brescia, Sondrio, Valle Seriana, Val Brembana, Val Gandino, Valle Camonica, Sebino, Franciacorta e Valtellina.
 
 FORMATO DI RISPOSTA
-Rispondi ESCLUSIVAMENTE in questo formato:
+Restituisci esclusivamente i campi titolo e articolo richiesti dall'applicazione. Il campo articolo deve contenere HTML WordPress completo.'''
 
-TITOLO:
-[titolo]
-
-ARTICOLO:
-[HTML WordPress dell'articolo]'''
+OLLAMA_JSON_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'titolo': {'type': 'string'},
+        'articolo': {'type': 'string'},
+    },
+    'required': ['titolo', 'articolo'],
+}
 
 
 def _float_value(value, default, minimum, maximum):
@@ -136,15 +140,76 @@ cp.base.load_config = load_config_with_ollama
 cp.base.save_config_from_form = save_config_with_ollama
 
 
-def _article_prompt(source_text, cfg):
+def _article_prompt(source_text, cfg, retry=False):
     editorial_prompt = (cfg.get('ollama_prompt') or DEFAULT_OLLAMA_PROMPT).strip()
+    retry_note = ''
+    if retry:
+        retry_note = '\nATTENZIONE: è un secondo tentativo. Compila entrambi i campi JSON richiesti, senza testo aggiuntivo. Il campo articolo deve contenere l’intero articolo HTML, non un riassunto.\n'
     return f'''{editorial_prompt}
-
+{retry_note}
 DATA REALE DI OGGI:
 {cp.base.italian_today_string()}
 
 TESTO DA TRASFORMARE:
 {source_text}'''.strip()
+
+
+def _ollama_request(endpoint, model, prompt, temperature, top_p, max_tokens, structured=True):
+    body = {
+        'model': model,
+        'prompt': prompt,
+        'stream': False,
+        'options': {
+            'temperature': temperature,
+            'top_p': top_p,
+            'num_predict': max_tokens,
+        },
+    }
+    if structured:
+        body['format'] = OLLAMA_JSON_SCHEMA
+    payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
+    request = Request(endpoint, data=payload, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
+    with urlopen(request, timeout=240) as response:
+        return json.loads(response.read().decode('utf-8', errors='replace'))
+
+
+def _parse_ollama_output(output):
+    text = str(output or '').strip()
+    if not text:
+        return None
+
+    # Percorso principale: structured output JSON.
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            title = str(data.get('titolo') or data.get('title') or '').strip()
+            article = str(data.get('articolo') or data.get('article') or '').strip()
+            if title and article:
+                return cp.base.clean_title(title), article
+    except Exception:
+        pass
+
+    # Recupera anche JSON racchiuso accidentalmente in ```json ... ```.
+    fenced = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, flags=re.I | re.S)
+    if fenced:
+        try:
+            data = json.loads(fenced.group(1))
+            title = str(data.get('titolo') or data.get('title') or '').strip()
+            article = str(data.get('articolo') or data.get('article') or '').strip()
+            if title and article:
+                return cp.base.clean_title(title), article
+        except Exception:
+            pass
+
+    # Compatibilità con il vecchio formato TITOLO / ARTICOLO.
+    match = re.search(r'TITOLO\s*:\s*(.*?)\s*ARTICOLO\s*:\s*(.+)', text, flags=re.I | re.S)
+    if match:
+        title = cp.base.clean_title(match.group(1).strip())
+        article = match.group(2).strip()
+        if title and article:
+            return title, article
+
+    return None
 
 
 def generate_article_ollama(source_text, cfg):
@@ -158,31 +223,30 @@ def generate_article_ollama(source_text, cfg):
     temperature = _float_value(cfg.get('ollama_temperature'), 0.3, 0.0, 2.0)
     top_p = _float_value(cfg.get('ollama_top_p'), 0.9, 0.0, 1.0)
     max_tokens = _int_value(cfg.get('ollama_max_tokens'), 4096, 512, 16384)
-
     endpoint = base_url + '/api/generate'
-    payload = json.dumps({
-        'model': model,
-        'prompt': _article_prompt(source_text, cfg),
-        'stream': False,
-        'options': {
-            'temperature': temperature,
-            'top_p': top_p,
-            'num_predict': max_tokens,
-        },
-    }).encode('utf-8')
-    request = Request(endpoint, data=payload, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
-    try:
-        with urlopen(request, timeout=240) as response:
-            result = json.loads(response.read().decode('utf-8', errors='replace'))
-    except Exception as exc:
-        raise RuntimeError(f'Ollama non raggiungibile su {base_url}: {type(exc).__name__}: {exc}') from exc
+    last_output = ''
 
-    output = str(result.get('response') or '').strip()
-    if 'TITOLO:' not in output or 'ARTICOLO:' not in output:
-        raise RuntimeError('Ollama non ha rispettato il formato TITOLO/ARTICOLO. Riprova.')
-    after_title = output.split('TITOLO:', 1)[1]
-    title_part, article_part = after_title.split('ARTICOLO:', 1)
-    return cp.base.clean_title(title_part.strip()), article_part.strip()
+    # Due tentativi automatici. Il secondo usa istruzioni ancora più rigide.
+    for attempt in (1, 2):
+        try:
+            result = _ollama_request(
+                endpoint, model, _article_prompt(source_text, cfg, retry=(attempt == 2)),
+                temperature, top_p, max_tokens, structured=True,
+            )
+        except Exception as exc:
+            raise RuntimeError(f'Ollama non raggiungibile su {base_url}: {type(exc).__name__}: {exc}') from exc
+
+        last_output = str(result.get('response') or '').strip()
+        parsed = _parse_ollama_output(last_output)
+        if parsed:
+            if attempt == 2:
+                cp.base.log('Ollama: secondo tentativo riuscito dopo output non valido al primo tentativo.')
+            return parsed
+
+        preview = last_output[:2000].replace('\n', ' ')
+        cp.base.log(f'Ollama: output non interpretabile al tentativo {attempt}/2: {preview}')
+
+    raise RuntimeError('Ollama non ha restituito titolo e articolo in un formato valido dopo 2 tentativi. Controlla il log applicazione per vedere la risposta ricevuta.')
 
 
 def generate_route_with_engine(index):
@@ -224,7 +288,7 @@ def test_ollama_route():
     return redirect(url_for('index'))
 
 
-RUNTIME_APP_VERSION = '2.3.0'
+RUNTIME_APP_VERSION = '2.3.1'
 cp.APP_VERSION = RUNTIME_APP_VERSION
 rp.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
@@ -235,6 +299,16 @@ def inject_ollama_patch_version():
 
 
 cp.CHANGELOG.insert(0, {
+    'version': '2.3.1',
+    'date': '15 settembre 2026',
+    'changes': [
+        'Ollama ora usa structured output JSON con i campi titolo e articolo.',
+        'Aggiunto un secondo tentativo automatico quando la prima risposta non è interpretabile.',
+        'Mantenuta compatibilità con risposte JSON in code block e con il vecchio formato TITOLO/ARTICOLO.',
+        'Gli output non interpretabili vengono registrati nel log per facilitare la diagnosi.',
+    ],
+})
+cp.CHANGELOG.insert(1, {
     'version': '2.3.0',
     'date': '15 settembre 2026',
     'changes': [
@@ -245,7 +319,7 @@ cp.CHANGELOG.insert(0, {
         'Versione runtime allineata alla release corrente.',
     ],
 })
-cp.CHANGELOG.insert(1, {
+cp.CHANGELOG.insert(2, {
     'version': '2.2.0',
     'date': '15 settembre 2026',
     'changes': [
