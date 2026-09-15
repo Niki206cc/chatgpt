@@ -1,171 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="card">
-  <div class="bar">
-    <h2>Mail trovate</h2>
-    <form method="post" action="{{ url_for('load_mails_route') }}">
-      <button class="btn primary icon-btn" type="submit" title="Carica mail" aria-label="Carica mail">✉️</button>
-    </form>
-  </div>
-
+  <div class="bar"><h2>Mail trovate</h2><form method="post" action="{{ url_for('load_mails_route') }}"><button class="btn primary icon-btn" type="submit" title="Carica mail" aria-label="Carica mail">✉️</button></form></div>
   <form method="post" action="{{ url_for('delete_mails_route') }}" onsubmit="return confirm('Cancellare le mail selezionate dal server?');">
-    <div class="table-actions">
-      <label class="check all-check">
-        <input type="checkbox" id="select-all-mails">
-        Seleziona tutte le mail visibili
-      </label>
-      {% if mails %}
-        <button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button>
-      {% endif %}
-    </div>
-
-    <table id="mails-table" class="sortable-table">
-      <thead>
-        <tr>
-          <th></th>
-          <th><button type="button" class="sort-btn" data-sort="subject">Oggetto</button></th>
-          <th><button type="button" class="sort-btn" data-sort="sender">Mittente</button></th>
-          <th>Data</th>
-          <th><button type="button" class="sort-btn" data-sort="size">Dimensione</button></th>
-          <th>Azioni</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for mail in mails %}
-        <tr class="{% if mail.unread %}unread{% endif %}" data-subject="{{ mail.subject|lower }}" data-sender="{{ mail.sender|lower }}" data-size="{{ mail.size_bytes }}">
-          <td><input class="mail-checkbox" type="checkbox" name="mail_indexes" value="{{ mail.i }}"></td>
-          <td>{% if mail.unread %}● {% endif %}{{ mail.subject }}</td>
-          <td>{{ mail.sender }}</td>
-          <td>{{ mail.date }}</td>
-          <td>{{ mail.size }}</td>
-          <td>
-            <a class="btn small icon-btn" href="{{ url_for('view_mail', index=mail.i) }}" title="Apri mail" aria-label="Apri mail">📂</a>
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="6">Premi “Carica mail” per leggere la casella.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-
-    {% if mails %}
-      <div class="table-actions bottom-actions">
-        <label class="check all-check">
-          <input type="checkbox" id="select-all-mails-bottom">
-          Seleziona tutte le mail visibili
-        </label>
-        <button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button>
-      </div>
-    {% endif %}
+    <div class="table-actions"><label class="check all-check"><input type="checkbox" id="select-all-mails"> Seleziona tutte le mail visibili</label>{% if mails %}<button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button>{% endif %}</div>
+    <table id="mails-table" class="sortable-table"><thead><tr><th></th><th><button type="button" class="sort-btn" data-sort="subject">Oggetto</button></th><th><button type="button" class="sort-btn" data-sort="sender">Mittente</button></th><th>Data</th><th><button type="button" class="sort-btn" data-sort="size">Dimensione</button></th><th>Azioni</th></tr></thead><tbody>
+    {% for mail in mails %}<tr class="{% if mail.unread %}unread{% endif %}" data-subject="{{ mail.subject|lower }}" data-sender="{{ mail.sender|lower }}" data-size="{{ mail.size_bytes }}"><td><input class="mail-checkbox" type="checkbox" name="mail_indexes" value="{{ mail.i }}"></td><td>{% if mail.unread %}● {% endif %}{{ mail.subject }}</td><td>{{ mail.sender }}</td><td>{{ mail.date }}</td><td>{{ mail.size }}</td><td><a class="btn small icon-btn" href="{{ url_for('view_mail', index=mail.i) }}" title="Apri mail" aria-label="Apri mail">📂</a></td></tr>{% else %}<tr><td colspan="6">Premi “Carica mail” per leggere la casella.</td></tr>{% endfor %}
+    </tbody></table>
+    {% if mails %}<div class="table-actions bottom-actions"><label class="check all-check"><input type="checkbox" id="select-all-mails-bottom"> Seleziona tutte le mail visibili</label><button class="btn danger icon-btn" type="submit" title="Cancella mail selezionate" aria-label="Cancella mail selezionate">🗑️</button></div>{% endif %}
   </form>
 </section>
-
-<section class="card">
-  <h2>Cartella allegati</h2>
-  <p class="big">{{ files|length }} file</p>
-  <p>{{ images|length }} immagini · {{ docs|length }} documenti · {{ total_size }}</p>
-  <form method="post" action="{{ url_for('clear_attachments_route') }}" onsubmit="return confirm('Vuoi eliminare tutti i file nella cartella allegati?');">
-    <button class="btn danger" type="submit">Svuota cartella allegati</button>
-  </form>
-
-  <h3>File presenti</h3>
-  <div class="files">
-    {% for f in files[:60] %}
-      <a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>
-    {% else %}
-      <p>Nessun allegato salvato.</p>
-    {% endfor %}
-  </div>
-</section>
-
-<details class="card">
-  <summary class="section-summary">Configurazione mail, SMTP e AI</summary>
-  <form method="post" action="{{ url_for('save_config_route') }}">
-    <h2>Configurazione salvata</h2>
-    <div class="tabs">
-      <h3>Casella comunicati</h3>
-      <div class="row">
-        <label>Protocollo
-          <select name="protocol">
-            <option value="IMAP" {% if cfg.protocol == 'IMAP' %}selected{% endif %}>IMAP</option>
-            <option value="POP3" {% if cfg.protocol == 'POP3' %}selected{% endif %}>POP3</option>
-          </select>
-        </label>
-        <label>Solo non lette
-          <input type="checkbox" name="only_unread" {% if cfg.only_unread %}checked{% endif %}>
-        </label>
-      </div>
-      <div class="row">
-        <label>Server entrata <input name="in_server" value="{{ cfg.in_server }}"></label>
-        <label>Porta <input name="in_port" value="{{ cfg.in_port }}"></label>
-      </div>
-      <div class="row">
-        <label>Username <input name="in_user" value="{{ cfg.in_user }}"></label>
-        <label>Password <input name="in_password" type="password" value="{{ cfg.in_password }}"></label>
-      </div>
-
-      <h3>Invio SMTP</h3>
-      <div class="row">
-        <label>SMTP server <input name="smtp_server" value="{{ cfg.smtp_server }}"></label>
-        <label>Porta <input name="smtp_port" value="{{ cfg.smtp_port }}"></label>
-      </div>
-      <div class="row">
-        <label>Username SMTP <input name="smtp_user" value="{{ cfg.smtp_user }}"></label>
-        <label>Password SMTP <input name="smtp_password" type="password" value="{{ cfg.smtp_password }}"></label>
-      </div>
-      <div class="row">
-        <label><input type="checkbox" name="smtp_tls" {% if cfg.smtp_tls %}checked{% endif %}> Usa STARTTLS</label>
-        <label><input type="checkbox" name="smtp_verify_ssl" {% if cfg.smtp_verify_ssl %}checked{% endif %}> Verifica certificato SSL</label>
-      </div>
-      <label>Destinatario articolo <input name="recipient" value="{{ cfg.recipient }}"></label>
-
-      <h3>AI</h3>
-      <div class="row">
-        <label>Motore AI
-          <select name="ai_provider">
-            <option value="Gemini" {% if cfg.ai_provider == 'Gemini' %}selected{% endif %}>Gemini</option>
-            <option value="OpenAI" {% if cfg.ai_provider == 'OpenAI' %}selected{% endif %}>OpenAI</option>
-          </select>
-        </label>
-        <label>Modello Gemini <input name="gemini_model" value="{{ cfg.gemini_model }}"></label>
-      </div>
-      <label>Gemini API Key <input name="gemini_key" type="password" value="{{ cfg.gemini_key }}"></label>
-      <div class="row">
-        <label>Modello OpenAI <input name="openai_model" value="{{ cfg.openai_model }}"></label>
-        <label>OpenAI API Key <input name="openai_key" type="password" value="{{ cfg.openai_key }}"></label>
-      </div>
-    </div>
-    <button class="btn primary" type="submit">Salva configurazione</button>
-  </form>
-</details>
-
-<details class="card log-box">
-  <summary class="section-summary">Log applicazione</summary>
-  <pre>{{ logs }}</pre>
-</details>
-
-<details class="card log-box">
-  <summary class="section-summary">Conferme inviate</summary>
-  <div class="table-actions">
-    <form method="post" action="{{ url_for('clear_confirmation_logs_route') }}" onsubmit="return confirm('Svuotare lo storico delle conferme inviate?');">
-      <button class="btn danger icon-btn" type="submit" title="Svuota storico conferme" aria-label="Svuota storico conferme">🗑️</button>
-    </form>
-  </div>
-  <pre>{{ confirmation_logs or "Nessuna conferma registrata." }}</pre>
-</details>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    const top = document.getElementById('select-all-mails');
-    const bottom = document.getElementById('select-all-mails-bottom');
-    const boxes = () => Array.from(document.querySelectorAll('.mail-checkbox'));
-    function setAll(checked) {
-      boxes().forEach(function (box) { box.checked = checked; });
-      if (top) top.checked = checked;
-      if (bottom) bottom.checked = checked;
-    }
-    if (top) top.addEventListener('change', function () { setAll(top.checked); });
-    if (bottom) bottom.addEventListener('change', function () { setAll(bottom.checked); });
-  });
-</script>
+<section class="card"><h2>Cartella allegati</h2><p class="big">{{ files|length }} file</p><p>{{ images|length }} immagini · {{ docs|length }} documenti · {{ total_size }}</p><form method="post" action="{{ url_for('clear_attachments_route') }}" onsubmit="return confirm('Vuoi eliminare tutti i file nella cartella allegati?');"><button class="btn danger" type="submit">Svuota cartella allegati</button></form><h3>File presenti</h3><div class="files">{% for f in files[:60] %}<a href="{{ url_for('download_attachment', filename=f.name) }}">{{ f.name }}</a>{% else %}<p>Nessun allegato salvato.</p>{% endfor %}</div></section>
+<details class="card"><summary class="section-summary">Configurazione mail, SMTP e AI</summary><form method="post" action="{{ url_for('save_config_route') }}"><h2>Configurazione salvata</h2><div class="tabs">
+<h3>Casella comunicati</h3><div class="row"><label>Protocollo<select name="protocol"><option value="IMAP" {% if cfg.protocol == 'IMAP' %}selected{% endif %}>IMAP</option><option value="POP3" {% if cfg.protocol == 'POP3' %}selected{% endif %}>POP3</option></select></label><label>Solo non lette<input type="checkbox" name="only_unread" {% if cfg.only_unread %}checked{% endif %}></label></div><div class="row"><label>Server entrata <input name="in_server" value="{{ cfg.in_server }}"></label><label>Porta <input name="in_port" value="{{ cfg.in_port }}"></label></div><div class="row"><label>Username <input name="in_user" value="{{ cfg.in_user }}"></label><label>Password <input name="in_password" type="password" value="{{ cfg.in_password }}"></label></div>
+<h3>Invio SMTP</h3><div class="row"><label>SMTP server <input name="smtp_server" value="{{ cfg.smtp_server }}"></label><label>Porta <input name="smtp_port" value="{{ cfg.smtp_port }}"></label></div><div class="row"><label>Username SMTP <input name="smtp_user" value="{{ cfg.smtp_user }}"></label><label>Password SMTP <input name="smtp_password" type="password" value="{{ cfg.smtp_password }}"></label></div><div class="row"><label><input type="checkbox" name="smtp_tls" {% if cfg.smtp_tls %}checked{% endif %}> Usa STARTTLS</label><label><input type="checkbox" name="smtp_verify_ssl" {% if cfg.smtp_verify_ssl %}checked{% endif %}> Verifica certificato SSL</label></div><label>Destinatario articolo <input name="recipient" value="{{ cfg.recipient }}"></label>
+<h3>AI</h3><div class="row"><label>Motore AI<select name="ai_provider"><option value="Gemini" {% if cfg.ai_provider == 'Gemini' %}selected{% endif %}>Gemini</option><option value="OpenAI" {% if cfg.ai_provider == 'OpenAI' %}selected{% endif %}>OpenAI</option></select></label><label>Modello Gemini <input name="gemini_model" value="{{ cfg.gemini_model }}"></label></div><label>Gemini API Key <input name="gemini_key" type="password" value="{{ cfg.gemini_key }}"></label><div class="row"><label>Modello OpenAI <input name="openai_model" value="{{ cfg.openai_model }}"></label><label>OpenAI API Key <input name="openai_key" type="password" value="{{ cfg.openai_key }}"></label></div>
+<h3>Ollama sul PC</h3><p>Inserisci l'indirizzo LAN del PC che esegue Ollama. Esempio: http://192.168.1.100:11434</p><div class="row"><label>URL Ollama <input name="ollama_url" value="{{ cfg.ollama_url or 'http://192.168.1.100:11434' }}" placeholder="http://192.168.1.100:11434"></label><label>Modello Ollama <input name="ollama_model" value="{{ cfg.ollama_model or 'qwen2.5vl:3b' }}" placeholder="qwen2.5vl:3b"></label></div>
+</div><button class="btn primary" type="submit">Salva configurazione</button></form></details>
+<details class="card log-box"><summary class="section-summary">Log applicazione</summary><pre>{{ logs }}</pre></details>
+<details class="card log-box"><summary class="section-summary">Conferme inviate</summary><div class="table-actions"><form method="post" action="{{ url_for('clear_confirmation_logs_route') }}" onsubmit="return confirm('Svuotare lo storico delle conferme inviate?');"><button class="btn danger icon-btn" type="submit" title="Svuota storico conferme" aria-label="Svuota storico conferme">🗑️</button></form></div><pre>{{ confirmation_logs or "Nessuna conferma registrata." }}</pre></details>
+<script>document.addEventListener('DOMContentLoaded',function(){const top=document.getElementById('select-all-mails');const bottom=document.getElementById('select-all-mails-bottom');const boxes=()=>Array.from(document.querySelectorAll('.mail-checkbox'));function setAll(checked){boxes().forEach(function(box){box.checked=checked;});if(top)top.checked=checked;if(bottom)bottom.checked=checked;}if(top)top.addEventListener('change',function(){setAll(top.checked);});if(bottom)bottom.addEventListener('change',function(){setAll(bottom.checked);});});</script>
 {% endblock %}
