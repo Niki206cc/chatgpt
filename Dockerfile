@@ -15,4 +15,7 @@ RUN mkdir -p /data /attachments
 
 EXPOSE 8080
 
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "quality_patch:app"]
+# Le generazioni Ollama locali, soprattutto con fonti lunghe, possono richiedere
+# diversi minuti. Il timeout predefinito di Gunicorn (30 s) terminava il worker
+# durante la generazione causando "Internal Server Error" nel browser.
+CMD ["gunicorn", "-w", "1", "--timeout", "600", "--graceful-timeout", "30", "-b", "0.0.0.0:8080", "quality_patch:app"]
