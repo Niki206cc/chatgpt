@@ -27,7 +27,6 @@ def _minimum_article_words(source_text):
 
 def _free_prompt(source_text, cfg, minimum_words, retry=False, previous_article=''):
     editorial = (cfg.get('ollama_prompt') or op.DEFAULT_OLLAMA_PROMPT).strip()
-    # Rimuove l'istruzione JSON/strutturata dal prompt configurabile: con modelli piccoli può far collassare la risposta.
     editorial = re.sub(r'FORMATO DI RISPOSTA.*$', '', editorial, flags=re.I | re.S).strip()
     retry_text = ''
     if retry:
@@ -36,11 +35,19 @@ def _free_prompt(source_text, cfg, minimum_words, retry=False, previous_article=
     return f'''{editorial}
 
 ISTRUZIONI DI OUTPUT PER OLLAMA:
-Scrivi direttamente il risultato nel seguente formato testuale, senza JSON e senza blocchi Markdown:
+Scrivi esclusivamente il titolo e il corpo dell'articolo nel seguente formato testuale:
 TITOLO: titolo dell'articolo
 ARTICOLO:
 <p>primo paragrafo...</p>
 <p>altri paragrafi...</p>
+
+REGOLE DI OUTPUT OBBLIGATORIE:
+- Non usare Markdown: niente **, ##, ---, ``` o sintassi [testo](URL).
+- Non aggiungere sezioni tecniche o editoriali dopo l'articolo.
+- Non scrivere SEO, SEO E DISCOVER, keyword, parole chiave, località, stile, note, analisi, meta description o riepiloghi.
+- Non aggiungere una sezione LINK o FONTI alla fine.
+- Se un URL presente nella fonte è utile dentro l'articolo, inseriscilo soltanto nel punto pertinente usando HTML <a href="URL">testo descrittivo</a>.
+- Dopo l'ultimo paragrafo dell'articolo non scrivere assolutamente altro.
 
 L'articolo deve avere almeno {minimum_words} parole quando la fonte lo consente. Non fare un semplice riassunto. Usa una parte significativa delle informazioni della fonte. Mantieni accuratamente date, luoghi, persone, ruoli, numeri, dichiarazioni e link presenti. Non inventare nulla. L'articolo deve essere completo e terminare con una frase completa.{retry_text}
 
@@ -51,12 +58,35 @@ FONTE ORIGINALE COMPLETA:
 {source_text}'''.strip()
 
 
+def _clean_article_output(article):
+    text = str(article or '').strip()
+    text = re.sub(r'^\s*(?:```(?:html|text)?\s*)+', '', text, flags=re.I)
+    text = re.sub(r'(?:\s*```)+\s*$', '', text)
+    text = re.sub(r'^\s*(?:\*\*|__)+\s*', '', text)
+    # Taglia eventuali appendici che il modello aggiunge nonostante il prompt.
+    stop_patterns = [
+        r'(?im)^\s*(?:---+\s*)?(?:\*\*|__)?\s*LINK\s*:\s*',
+        r'(?im)^\s*(?:---+\s*)?(?:\*\*|__)?\s*SEO(?:\s+E\s+DISCOVER)?\s*:\s*',
+        r'(?im)^\s*(?:---+\s*)?(?:\*\*|__)?\s*(?:KEYWORD|PAROLE\s+CHIAVE|LOCALIT[ÀA]|STILE|META\s+DESCRIPTION|NOTE|FONTI)\s*:\s*',
+    ]
+    cut = len(text)
+    for pattern in stop_patterns:
+        match = re.search(pattern, text)
+        if match: cut = min(cut, match.start())
+    text = text[:cut].strip()
+    text = re.sub(r'(?m)^\s*---+\s*$', '', text).strip()
+    # Elimina marcatori Markdown residui senza toccare i tag HTML WordPress.
+    text = text.replace('**', '').replace('__', '').strip()
+    return text
+
+
 def _parse_free_output(raw):
     text = str(raw or '').strip()
     text = re.sub(r'^```(?:html|text)?\s*', '', text, flags=re.I); text = re.sub(r'\s*```$', '', text)
     match = re.search(r'TITOLO\s*:\s*(.*?)\s*ARTICOLO\s*:\s*(.+)', text, flags=re.I | re.S)
     if match:
-        title = cp.base.clean_title(match.group(1).strip()); article = match.group(2).strip()
+        title = cp.base.clean_title(match.group(1).strip().replace('**','').replace('__',''))
+        article = _clean_article_output(match.group(2))
         if title and article: return title, article
     return None
 
@@ -68,7 +98,7 @@ def generate_article_ollama_quality(source_text, cfg):
     temperature = op._float_value(cfg.get('ollama_temperature'), 0.3, 0.0, 2.0); top_p = op._float_value(cfg.get('ollama_top_p'), 0.9, 0.0, 1.0)
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 16384, 512, 32768); first_tokens = max(configured_tokens, 16384); second_tokens = 32768
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
-    cp.base.log(f'Ollama v2.3.5: fonte ricevuta={_source_word_count(source_text)} parole; minimo articolo={minimum_words}; modalità=HTML libero senza structured JSON.')
+    cp.base.log(f'Ollama v2.3.6: fonte ricevuta={_source_word_count(source_text)} parole; minimo articolo={minimum_words}; modalità=HTML libero pulito.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         try:
@@ -85,7 +115,7 @@ def generate_article_ollama_quality(source_text, cfg):
         title, article = parsed; words = _plain_word_count(article)
         if words >= minimum_words:
             cp.base.log(f'Ollama qualità: articolo accettato al tentativo {attempt}/2 ({words} parole; minimo {minimum_words}; fonte {_source_word_count(source_text)}).'); return title, article
-        last_reason = f'articolo troppo breve: {words} parole, minimo richiesto {minimum_words}'; previous_article = article
+        last_reason = f'articolo troppo breve dopo pulizia: {words} parole, minimo richiesto {minimum_words}'; previous_article = article
         cp.base.log(f'Ollama qualità: {last_reason}. Nuovo tentativo in modalità libera.' if attempt == 1 else f'Ollama qualità: {last_reason}.')
     raise RuntimeError(f'Ollama non ha prodotto un articolo sufficientemente completo dopo 2 tentativi ({last_reason}). Controlla il log applicazione.')
 
@@ -96,18 +126,18 @@ def generate_route_with_quality(index):
     if engine != 'ollama': return _original_generate_route(index)
     original_generator = cp.base.generate_article; cp.base.generate_article = generate_article_ollama_quality
     try:
-        cp.base.log(f'Generazione articolo con Ollama v2.3.5 richiesta per mail {index}'); return _original_generate_route(index)
+        cp.base.log(f'Generazione articolo con Ollama v2.3.6 richiesta per mail {index}'); return _original_generate_route(index)
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.3.5'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.3.6'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.3.5','date':'16 settembre 2026','changes':[
-    'Ollama genera ora titolo e articolo in formato testuale/HTML libero invece del constrained structured JSON, più affidabile con qwen2.5vl:3b.',
-    'Restano il controllo di lunghezza e il secondo tentativo automatico con la bozza precedente.',
-    'Disponibili fino a 16384 token al primo tentativo e 32768 al secondo.',
-    'Corretta la gestione dell’immagine casuale: l’upload virtuale supporta read, seek e save.',
+cp.CHANGELOG.insert(0, {'version':'2.3.6','date':'16 settembre 2026','changes':[
+    'Ollama riceve istruzioni esplicite per non produrre Markdown, separatori o appendici tecniche.',
+    'Rimozione automatica di marcatori ** e __ eventualmente presenti nel titolo o nel corpo.',
+    'Rimozione automatica delle appendici LINK, SEO E DISCOVER, keyword, località, stile, meta description, note e fonti.',
+    'Gli URL utili devono comparire solo nel corpo dell’articolo come normali link HTML WordPress.',
 ]})
