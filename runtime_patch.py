@@ -18,7 +18,7 @@ RANDOM_IMAGE_HISTORY_FILE = cp.base.DATA_DIR / 'random_image_history.json'
 RANDOM_IMAGE_HISTORY_LIMIT = 30
 
 # Correzione categoria Valle Seriana.
-cp.CATEGORY_NAME_BY_VALUE['valseriana'] = 'Valle Seriana'
+cp.CATEGORY_NAMES['valseriana'] = 'Valle Seriana'
 cp.APP_VERSION = RUNTIME_APP_VERSION
 
 
