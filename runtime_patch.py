@@ -191,7 +191,6 @@ def runtime_generate_route(index):
     except Exception as exc:
         cp.base.log_exception('Errore generazione articolo', exc)
         flash(f'Errore generazione articolo: {type(exc).__name__}: {exc}', 'danger')
-        # Non richiamare fixed_app.render_open_mail: la funzione non esiste.
         target = item.server_id if item is not None else index
         return redirect(url_for('view_mail', index=target))
 
@@ -211,12 +210,12 @@ app.view_functions['generate_route'] = runtime_generate_route
 app.add_url_rule('/random-image', endpoint='random_image_route', view_func=random_image_route, methods=['GET'])
 
 
-_original_send_article = cp.send_article_route
+_original_send_preview = cp.patched_send_preview_route
 
-def runtime_send_article(index):
+def runtime_send_preview(index):
     from flask import request
     if request.form.get('image_mode', '').strip().lower() != 'random':
-        return _original_send_article(index)
+        return _original_send_preview(index)
     random_url = request.form.get('random_image_url', '').strip()
     if not random_url:
         raise RuntimeError('Seleziona prima un’immagine casuale.')
@@ -238,14 +237,14 @@ def runtime_send_article(index):
     request.files.get = patched_files_get
     request.form.get = patched_form_get
     try:
-        response = _original_send_article(index)
+        response = _original_send_preview(index)
         remember_random_image(random_url)
         return response
     finally:
         request.files.get = original_files_get
         request.form.get = original_form_get
 
-app.view_functions['send_article_route'] = runtime_send_article
+app.view_functions['send_preview_route'] = runtime_send_preview
 
 @app.context_processor
 def inject_runtime_version():
