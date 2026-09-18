@@ -1,4 +1,8 @@
 import re
+import json
+import time
+import threading
+import uuid
 from collections import Counter
 
 from bs4 import BeautifulSoup
@@ -7,6 +11,28 @@ import ollama_patch as op
 cp = op.cp
 app = op.app
 _original_generate_route = op._original_generate_route
+
+_OLLAMA_JOBS = {}
+_OLLAMA_JOBS_LOCK = threading.Lock()
+
+def _job_update(job_id, message, progress=None, state=None, redirect_url=None):
+    if not job_id: return
+    with _OLLAMA_JOBS_LOCK:
+        job = _OLLAMA_JOBS.setdefault(job_id, {'messages': [], 'progress': 0, 'state': 'running'})
+        stamp = time.strftime('%H:%M:%S')
+        job['messages'].append(f'{stamp} · {message}')
+        job['messages'] = job['messages'][-80:]
+        if progress is not None: job['progress'] = max(0, min(100, int(progress)))
+        if state: job['state'] = state
+        if redirect_url: job['redirect_url'] = redirect_url
+
+@app.get('/ollama-status/<job_id>')
+def ollama_status_route(job_id):
+    from flask import jsonify
+    with _OLLAMA_JOBS_LOCK:
+        job = dict(_OLLAMA_JOBS.get(job_id) or {'messages':['In attesa di avvio...'], 'progress':0, 'state':'waiting'})
+    return jsonify(job)
+
 
 
 def _plain_text(html):
@@ -134,19 +160,27 @@ def _quality_issue(article, source_text):
     return ''
 
 
-def generate_article_ollama_quality(source_text, cfg):
+def generate_article_ollama_quality(source_text, cfg, job_id=None):
     base_url = (cfg.get('ollama_url') or '').strip().rstrip('/'); model = (cfg.get('ollama_model') or '').strip()
     if not base_url: raise RuntimeError('Configura l’URL di Ollama nella dashboard.')
     if not model: raise RuntimeError('Configura il modello Ollama nella dashboard.')
     temperature = op._float_value(cfg.get('ollama_temperature'), 0.3, 0.0, 2.0); top_p = op._float_value(cfg.get('ollama_top_p'), 0.9, 0.0, 1.0)
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
-    cp.base.log(f'Ollama v2.4.0: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
+    cp.base.log(f'Ollama v2.4.1: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
+        _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
         try:
             result = op._ollama_request(endpoint, model, _free_prompt(source_text, cfg, minimum_words, attempt == 2, previous_article, last_reason), temperature, top_p, tokens, structured=False)
-        except Exception as exc: raise RuntimeError(f'Ollama non raggiungibile su {base_url}: {type(exc).__name__}: {exc}') from exc
+        except TimeoutError as exc:
+            _job_update(job_id, 'Timeout: Ollama non ha completato la generazione entro 600 secondi.', 100, 'error')
+            raise RuntimeError('Ollama ha impiegato più di 600 secondi per completare la generazione.') from exc
+        except Exception as exc:
+            _job_update(job_id, f'Errore di comunicazione con Ollama: {type(exc).__name__}: {exc}', 100, 'error')
+            raise RuntimeError(f'Errore di comunicazione con Ollama su {base_url}: {type(exc).__name__}: {exc}') from exc
+        _job_update(job_id, f'Risposta ricevuta da Ollama al tentativo {attempt}. Controllo formato e qualità...', 55 if attempt == 1 else 85)
         raw = str(result.get('response') or '').strip(); done = result.get('done'); done_reason = str(result.get('done_reason') or '').strip().lower()
         cp.base.log(f'Ollama qualità: tentativo {attempt}/2; done={done}; done_reason={done_reason or "n/d"}; eval_count={result.get("eval_count","?")}; num_predict={tokens}.')
         if done is False or done_reason in ('length','max_tokens','limit'):
@@ -158,32 +192,45 @@ def generate_article_ollama_quality(source_text, cfg):
         issue = _quality_issue(article, source_text)
         if issue:
             last_reason = issue; previous_article = article
-            cp.base.log(f'Ollama qualità: bozza rifiutata al tentativo {attempt}/2: {issue}.')
+            cp.base.log(f'Ollama qualità: bozza rifiutata al tentativo {attempt}/2: {issue}.'); _job_update(job_id, f'Bozza rifiutata: {issue}. Avvio rigenerazione.' if attempt == 1 else f'Bozza rifiutata: {issue}.', 60 if attempt == 1 else 95)
             continue
         if words < minimum_words:
             last_reason = f'articolo troppo breve: {words} parole, minimo {minimum_words}'; previous_article = article
-            cp.base.log(f'Ollama qualità: {last_reason}.'); continue
+            cp.base.log(f'Ollama qualità: {last_reason}.'); _job_update(job_id, last_reason + ('. Rigenerazione...' if attempt == 1 else ''), 60 if attempt == 1 else 95); continue
+        _job_update(job_id, f'Articolo verificato: {words} parole, HTML valido e nessuna ripetizione.', 95)
         cp.base.log(f'Ollama qualità: articolo accettato al tentativo {attempt}/2 ({words} parole), HTML e ripetizioni verificati.')
         return title, article
     raise RuntimeError(f'Ollama non ha prodotto un articolo pubblicabile dopo 2 tentativi ({last_reason}). Controlla il log applicazione.')
 
 
 def generate_route_with_quality(index):
-    from flask import request
+    from flask import request, jsonify, url_for
     engine = (request.form.get('ai_engine') or 'default').strip().lower()
     if engine != 'ollama': return _original_generate_route(index)
-    original_generator = cp.base.generate_article; cp.base.generate_article = generate_article_ollama_quality
+    job_id = (request.form.get('ollama_job_id') or '').strip()
+    original_generator = cp.base.generate_article
+    cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
-        cp.base.log(f'Generazione articolo con Ollama v2.4.0 richiesta per mail {index}'); return _original_generate_route(index)
+        _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
+        cp.base.log(f'Generazione articolo con Ollama v2.4.1 richiesta per mail {index}')
+        response = _original_generate_route(index)
+        _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
+        return response
+    except Exception as exc:
+        _job_update(job_id, f'Generazione terminata con errore: {type(exc).__name__}: {exc}', 100, 'error')
+        raise
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.4.0'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.4.1'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.4.0','date':'18 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.4.1','date':'18 settembre 2026','changes':[
+    'Context Ollama fissato a 32K (32768 token).',
+    'Timeout della generazione Ollama aumentato da 240 a 600 secondi.',
+    'Aggiunto monitor di avanzamento nella schermata della mail con messaggi sulle fasi di comunicazione e controllo qualità.',
     'Gestione multi-immagine: scelta separata dell’immagine in evidenza e delle foto aggiuntive da inserire in fondo all’articolo.',
     'Le immagini secondarie vengono inviate inline nell’HTML per Postie e non duplicano la foto in evidenza.',
     'Rilevamento automatico di frasi e sequenze di parole ripetute: le bozze in loop vengono rifiutate.',
