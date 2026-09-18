@@ -10,15 +10,23 @@
       <input type="hidden" name="ai_engine" value="default">
       <button class="btn primary" type="submit" title="Crea anteprima con il motore AI configurato">✨ Genera articolo</button>
     </form>
-    <form method="post" action="{{ url_for('generate_route', index=index) }}">
+    <form id="ollama-generate-form" method="post" action="{{ url_for('generate_route', index=index) }}">
       <input type="hidden" name="ai_engine" value="ollama">
-      <button class="btn" type="submit" title="Crea anteprima usando Ollama sul PC">🖥️ Genera con Ollama</button>
+      <input type="hidden" id="ollama-job-id" name="ollama_job_id" value="">
+      <button class="btn" id="ollama-generate-btn" type="submit" title="Crea anteprima usando Ollama sul PC">🖥️ Genera con Ollama</button>
     </form>
     <form method="post" action="{{ url_for('delete_one_mail_route', index=index) }}" onsubmit="return confirm('Cancellare questa mail dal server?');">
       <button class="btn danger icon-btn" type="submit" title="Cancella questa mail" aria-label="Cancella questa mail">🗑️</button>
     </form>
   </div>
 </section>
+
+<div id="ollama-progress-panel" class="card" style="display:none;position:fixed;right:20px;bottom:20px;width:min(520px,calc(100vw - 40px));z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.25)">
+  <h3 style="margin-top:0">Comunicazione con Ollama</h3>
+  <div style="height:14px;background:#ddd;border-radius:8px;overflow:hidden"><div id="ollama-progress-bar" style="height:100%;width:0%;background:#333;transition:width .4s"></div></div>
+  <p id="ollama-progress-label" style="margin:8px 0">Preparazione...</p>
+  <pre id="ollama-dialog" style="max-height:220px;overflow:auto;white-space:pre-wrap;font-size:12px">In attesa...</pre>
+</div>
 
 <section class="grid two">
   <div class="card">
@@ -54,4 +62,47 @@
     {% endfor %}
   </div>
 </section>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('ollama-generate-form');
+  if (!form) return;
+  const panel = document.getElementById('ollama-progress-panel');
+  const bar = document.getElementById('ollama-progress-bar');
+  const label = document.getElementById('ollama-progress-label');
+  const dialog = document.getElementById('ollama-dialog');
+  const jobInput = document.getElementById('ollama-job-id');
+  const button = document.getElementById('ollama-generate-btn');
+
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const jobId = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+    jobInput.value = jobId;
+    panel.style.display = 'block'; button.disabled = true;
+    label.textContent = 'Invio richiesta...'; bar.style.width = '3%'; dialog.textContent = 'Invio richiesta al programma...';
+
+    const data = new FormData(form);
+    const generation = fetch(form.action, {method:'POST', body:data, redirect:'follow'}).then(async function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const html = await response.text();
+      document.open(); document.write(html); document.close();
+    }).catch(function (error) {
+      label.textContent = 'Errore: ' + error.message; button.disabled = false;
+    });
+
+    const poll = setInterval(async function () {
+      try {
+        const response = await fetch('/ollama-status/' + encodeURIComponent(jobId), {cache:'no-store'});
+        const status = await response.json();
+        bar.style.width = (status.progress || 0) + '%';
+        label.textContent = status.state === 'error' ? 'Errore' : (status.progress >= 100 ? 'Completato' : 'Ollama sta lavorando...');
+        dialog.textContent = (status.messages || []).join('\n');
+        dialog.scrollTop = dialog.scrollHeight;
+        if (status.state === 'done' || status.state === 'error') clearInterval(poll);
+      } catch (e) {}
+    }, 1200);
+    await generation;
+    clearInterval(poll);
+  });
+});
+</script>
 {% endblock %}
