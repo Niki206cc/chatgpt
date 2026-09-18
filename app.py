@@ -625,22 +625,67 @@ def smtp_send_message(msg, cfg):
             server.send_message(msg)
 
 
-def send_result_email(title, html_article, image_filename, cfg):
+def send_result_email(title, html_article, image_filename, cfg, additional_image_filenames=None):
+    additional_image_filenames = [
+        Path(name).name for name in (additional_image_filenames or [])
+        if name and Path(name).name != Path(image_filename or '').name
+    ]
+
     msg = EmailMessage()
     msg["Subject"] = title
     msg["From"] = cfg["smtp_user"]
     msg["To"] = cfg["recipient"] or DESTINATARIO_DEFAULT
-    plain_fallback = BeautifulSoup(html_article, "html.parser").get_text("\n", strip=True)
+
+    # Le immagini secondarie vengono inserite inline in fondo all'HTML.
+    # Postie, con Preferred Text Type = HTML, mantiene le immagini inline nella
+    # posizione del messaggio e le importa nella Media Library.
+    inline_images = []
+    extra_html = []
+    for position, filename in enumerate(additional_image_filenames, start=1):
+        image_path = ATTACHMENTS_DIR / filename
+        if not image_path.exists() or not image_path.is_file():
+            log(f"Immagine secondaria non trovata, ignorata: {filename}")
+            continue
+        data = image_path.read_bytes()
+        ext = image_path.suffix.lower().replace(".", "") or "jpeg"
+        if ext == "jpg":
+            ext = "jpeg"
+        cid = f"postie-extra-{position}-{int(time.time())}@montagneepaesi"
+        inline_images.append((data, ext, image_path.name, cid))
+        extra_html.append(
+            f'<p><img src="cid:{cid}" alt="" style="max-width:100%;height:auto;" /></p>'
+        )
+
+    final_html = html_article
+    if extra_html:
+        final_html = html_article.rstrip() + "\n\n" + "\n".join(extra_html)
+
+    plain_fallback = BeautifulSoup(final_html, "html.parser").get_text("\n", strip=True)
     msg.set_content(plain_fallback)
-    msg.add_alternative(html_article, subtype="html")
+    msg.add_alternative(final_html, subtype="html")
+    html_part = msg.get_payload()[-1]
+
+    for data, ext, filename, cid in inline_images:
+        html_part.add_related(
+            data,
+            maintype="image",
+            subtype=ext,
+            cid=f"<{cid}>",
+            filename=filename,
+            disposition="inline",
+        )
+
+    # L'immagine in evidenza resta un normale allegato e viene aggiunta per prima
+    # tra gli allegati non-inline: Postie può usarla come featured image.
     if image_filename:
-        image_path = ATTACHMENTS_DIR / image_filename
+        image_path = ATTACHMENTS_DIR / Path(image_filename).name
         if image_path.exists():
             data = image_path.read_bytes()
             ext = image_path.suffix.lower().replace(".", "") or "jpeg"
             if ext == "jpg":
                 ext = "jpeg"
             msg.add_attachment(data, maintype="image", subtype=ext, filename=image_path.name)
+
     smtp_send_message(msg, cfg)
 
 
