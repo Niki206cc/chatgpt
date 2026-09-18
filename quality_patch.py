@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import uuid
+from pathlib import Path
 from collections import Counter
 
 from bs4 import BeautifulSoup
@@ -12,27 +13,40 @@ cp = op.cp
 app = op.app
 _original_generate_route = op._original_generate_route
 
-_OLLAMA_JOBS = {}
+_OLLAMA_JOB_DIR = Path(cp.base.DATA_DIR) / 'ollama_jobs'
+_OLLAMA_JOB_DIR.mkdir(parents=True, exist_ok=True)
 _OLLAMA_JOBS_LOCK = threading.Lock()
 
+def _job_path(job_id):
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '', str(job_id or ''))
+    return _OLLAMA_JOB_DIR / (safe + '.json') if safe else None
+
 def _job_update(job_id, message, progress=None, state=None, redirect_url=None):
-    if not job_id: return
+    path = _job_path(job_id)
+    if not path: return
     with _OLLAMA_JOBS_LOCK:
-        job = _OLLAMA_JOBS.setdefault(job_id, {'messages': [], 'progress': 0, 'state': 'running'})
+        job = {'messages': [], 'progress': 0, 'state': 'running'}
+        try:
+            if path.exists(): job.update(json.loads(path.read_text(encoding='utf-8')))
+        except Exception: pass
         stamp = time.strftime('%H:%M:%S')
-        job['messages'].append(f'{stamp} · {message}')
-        job['messages'] = job['messages'][-80:]
+        job['messages'] = list(job.get('messages') or [])[-79:] + [f'{stamp} · {message}']
         if progress is not None: job['progress'] = max(0, min(100, int(progress)))
         if state: job['state'] = state
         if redirect_url: job['redirect_url'] = redirect_url
+        tmp = path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(job, ensure_ascii=False), encoding='utf-8')
+        tmp.replace(path)
 
 @app.get('/ollama-status/<job_id>')
 def ollama_status_route(job_id):
     from flask import jsonify
-    with _OLLAMA_JOBS_LOCK:
-        job = dict(_OLLAMA_JOBS.get(job_id) or {'messages':['In attesa di avvio...'], 'progress':0, 'state':'waiting'})
+    path = _job_path(job_id)
+    job = {'messages':['In attesa di avvio...'], 'progress':0, 'state':'waiting'}
+    try:
+        if path and path.exists(): job.update(json.loads(path.read_text(encoding='utf-8')))
+    except Exception: pass
     return jsonify(job)
-
 
 
 def _plain_text(html):
@@ -168,7 +182,7 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.4.1: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    cp.base.log(f'Ollama v2.4.2: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
@@ -212,7 +226,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.4.1 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.4.2 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -222,12 +236,13 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.4.1'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.4.2'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.4.1','date':'18 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.4.2','date':'18 settembre 2026','changes':[
+    'Monitor Ollama corretto: stato condiviso su /data così il browser può leggerlo mentre un altro worker esegue la generazione.',
     'Context Ollama fissato a 32K (32768 token).',
     'Timeout della generazione Ollama aumentato da 240 a 600 secondi.',
     'Aggiunto monitor di avanzamento nella schermata della mail con messaggi sulle fasi di comunicazione e controllo qualità.',
