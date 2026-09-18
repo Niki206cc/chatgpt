@@ -364,6 +364,7 @@ def patched_send_preview_route(index):
         html_article = request.form.get('html_article', '').strip()
         sender_email = request.form.get('sender_email', '').strip()
         selected_categories = request.form.getlist('categories')
+        additional_images = [Path(name).name for name in request.form.getlist('additional_images') if name]
         send_confirmation = bool(request.form.get('send_confirmation'))
         delete_after_send = bool(request.form.get('delete_after_send'))
         image_mode = request.form.get('image_mode', 'existing').strip()
@@ -383,7 +384,8 @@ def patched_send_preview_route(index):
             image_filename = request.form.get('image_filename', '').strip()
 
         postie_subject, accepted_categories = build_postie_subject(title, selected_categories)
-        base.send_result_email(postie_subject, html_article, image_filename, cfg)
+        additional_images = [name for name in additional_images if name != image_filename and (base.ATTACHMENTS_DIR / name).exists()]
+        base.send_result_email(postie_subject, html_article, image_filename, cfg, additional_images)
 
         if send_confirmation and sender_email:
             try:
@@ -422,7 +424,7 @@ def patched_send_preview_route(index):
                 flash(msg, 'warning')
         else:
             flash(msg, 'success')
-        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; modalità immagine: {image_mode}; immagine: {image_filename}; cancellazione automatica mail: {delete_after_send}')
+        base.log(f'Email articolo inviata: {title}; categorie: {accepted_categories}; modalità immagine: {image_mode}; immagine evidenza: {image_filename}; immagini nel corpo: {additional_images}; cancellazione automatica mail: {delete_after_send}')
     except Exception as exc:
         base.log_exception('Errore invio email', exc)
         flash(f'Errore invio email: {type(exc).__name__}: {exc}', 'danger')
