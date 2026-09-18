@@ -74,6 +74,29 @@
       </select>
     </label>
 
+    {% set editorial_count = namespace(value=0) %}
+    {% for img in image_names %}
+      {% if img != default_image_filename %}
+        {% set editorial_count.value = editorial_count.value + 1 %}
+      {% endif %}
+    {% endfor %}
+    {% if editorial_count.value > 1 %}
+    <div style="margin-top:18px">
+      <h3>Altre immagini da inserire nell'articolo</h3>
+      <p>Seleziona le foto che vuoi inserire in fondo all'articolo. La foto scelta sopra resta l'immagine in evidenza e non verrà duplicata nel testo.</p>
+      <div class="thumb-grid">
+        {% for img in image_names %}
+          {% if img != default_image_filename %}
+          <label class="thumb" style="cursor:pointer">
+            <img src="{{ url_for('view_attachment', filename=img) }}" alt="{{ img }}">
+            <span><input class="additional-image-checkbox" type="checkbox" name="additional_images" value="{{ img }}" {% if img == selected_image %}disabled{% endif %}> {{ img }}</span>
+          </label>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if random_image_url %}
     <label class="check"><input type="radio" name="image_mode" value="random"> Usa immagine casuale dalla libreria Montagne & Paesi</label>
     <input type="hidden" id="random-image-url" name="random_image_url" value="{{ random_image_url }}">
@@ -188,6 +211,22 @@ document.addEventListener('DOMContentLoaded', function () {
   const randomPreview = document.getElementById('random-image-preview');
   const randomStatus = document.getElementById('random-image-status');
   const randomRadio = document.querySelector('input[name="image_mode"][value="random"]');
+  const featuredSelect = document.querySelector('select[name="image_filename"]');
+  const additionalImageCheckboxes = document.querySelectorAll('.additional-image-checkbox');
+
+  function syncAdditionalImages() {
+    if (!featuredSelect || !additionalImageCheckboxes.length) return;
+    additionalImageCheckboxes.forEach(function (box) {
+      const isFeatured = box.value === featuredSelect.value;
+      box.disabled = isFeatured;
+      if (isFeatured) box.checked = false;
+    });
+  }
+
+  if (featuredSelect && additionalImageCheckboxes.length) {
+    featuredSelect.addEventListener('change', syncAdditionalImages);
+    syncAdditionalImages();
+  }
 
   if (checkbox && article) {
     const marker = '<p><em>Immagine generata con AI.</em></p>';
