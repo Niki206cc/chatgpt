@@ -130,7 +130,7 @@ def save_config_with_ollama(form):
         'prompt': (form.get('ollama_prompt', '') or DEFAULT_OLLAMA_PROMPT).strip(),
         'temperature': str(_float_value(form.get('ollama_temperature'), 0.3, 0.0, 2.0)),
         'top_p': str(_float_value(form.get('ollama_top_p'), 0.9, 0.0, 1.0)),
-        'max_tokens': str(_int_value(form.get('ollama_max_tokens'), 4096, 512, 16384)),
+        'max_tokens': str(_int_value(form.get('ollama_max_tokens'), 4096, 512, 8192)),
     }
     with open(cp.base.CONFIG_FILE, 'w', encoding='utf-8') as handle:
         parser.write(handle)
@@ -163,13 +163,14 @@ def _ollama_request(endpoint, model, prompt, temperature, top_p, max_tokens, str
             'temperature': temperature,
             'top_p': top_p,
             'num_predict': max_tokens,
+            'num_ctx': 32768,
         },
     }
     if structured:
         body['format'] = OLLAMA_JSON_SCHEMA
     payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
     request = Request(endpoint, data=payload, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
-    with urlopen(request, timeout=240) as response:
+    with urlopen(request, timeout=600) as response:
         return json.loads(response.read().decode('utf-8', errors='replace'))
 
 
