@@ -141,7 +141,7 @@ def generate_article_ollama_quality(source_text, cfg):
     temperature = op._float_value(cfg.get('ollama_temperature'), 0.3, 0.0, 2.0); top_p = op._float_value(cfg.get('ollama_top_p'), 0.9, 0.0, 1.0)
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
-    cp.base.log(f'Ollama v2.3.7: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    cp.base.log(f'Ollama v2.4.0: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         try:
@@ -174,16 +174,18 @@ def generate_route_with_quality(index):
     if engine != 'ollama': return _original_generate_route(index)
     original_generator = cp.base.generate_article; cp.base.generate_article = generate_article_ollama_quality
     try:
-        cp.base.log(f'Generazione articolo con Ollama v2.3.7 richiesta per mail {index}'); return _original_generate_route(index)
+        cp.base.log(f'Generazione articolo con Ollama v2.4.0 richiesta per mail {index}'); return _original_generate_route(index)
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.3.7'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.4.0'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.3.7','date':'16 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.4.0','date':'18 settembre 2026','changes':[
+    'Gestione multi-immagine: scelta separata dell’immagine in evidenza e delle foto aggiuntive da inserire in fondo all’articolo.',
+    'Le immagini secondarie vengono inviate inline nell’HTML per Postie e non duplicano la foto in evidenza.',
     'Rilevamento automatico di frasi e sequenze di parole ripetute: le bozze in loop vengono rifiutate.',
     'Validazione dell’HTML e rifiuto di tag corrotti come <pp> o chiusure </p> malformate.',
     'Controllo contro articoli sproporzionatamente lunghi rispetto alla fonte.',
