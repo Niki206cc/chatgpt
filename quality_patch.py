@@ -62,9 +62,9 @@ def _source_word_count(text): return len(re.findall(r"\b[\wÀ-ÿ’'-]+\b", str(
 
 def _minimum_article_words(source_text):
     words = _source_word_count(source_text)
-    if words >= 1200: return 500
-    if words >= 800: return 400
-    if words >= 500: return 300
+    if words >= 1200: return 450
+    if words >= 800: return 350
+    if words >= 500: return 280
     if words >= 300: return 220
     if words >= 150: return 130
     return 70
@@ -182,7 +182,7 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.4.2: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    cp.base.log(f'Ollama v2.4.3: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
@@ -209,8 +209,14 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
             cp.base.log(f'Ollama qualità: bozza rifiutata al tentativo {attempt}/2: {issue}.'); _job_update(job_id, f'Bozza rifiutata: {issue}. Avvio rigenerazione.' if attempt == 1 else f'Bozza rifiutata: {issue}.', 60 if attempt == 1 else 95)
             continue
         if words < minimum_words:
-            last_reason = f'articolo troppo breve: {words} parole, minimo {minimum_words}'; previous_article = article
-            cp.base.log(f'Ollama qualità: {last_reason}.'); _job_update(job_id, last_reason + ('. Rigenerazione...' if attempt == 1 else ''), 60 if attempt == 1 else 95); continue
+            deficit = minimum_words - words
+            tolerance = max(20, int(minimum_words * 0.10))
+            if deficit <= tolerance:
+                cp.base.log(f'Ollama qualità: articolo sotto il minimo di sole {deficit} parole ({words}/{minimum_words}); accettato entro tolleranza.')
+                _job_update(job_id, f'Articolo di {words} parole: leggermente sotto l’obiettivo ma entro tolleranza, accettato.', 95)
+            else:
+                last_reason = f'articolo troppo breve: {words} parole, obiettivo {minimum_words}'; previous_article = article
+                cp.base.log(f'Ollama qualità: {last_reason}.'); _job_update(job_id, last_reason + ('. Rigenerazione...' if attempt == 1 else ''), 60 if attempt == 1 else 95); continue
         _job_update(job_id, f'Articolo verificato: {words} parole, HTML valido e nessuna ripetizione.', 95)
         cp.base.log(f'Ollama qualità: articolo accettato al tentativo {attempt}/2 ({words} parole), HTML e ripetizioni verificati.')
         return title, article
@@ -226,7 +232,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.4.2 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.4.3 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -236,12 +242,14 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.4.2'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.4.3'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.4.2','date':'18 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.4.3','date':'19 settembre 2026','changes':[
+    'Controllo lunghezza reso elastico: una bozza valida non viene più scartata per pochi vocaboli sotto l’obiettivo.',
+    'Obiettivi di lunghezza Ollama leggermente ridotti per evitare rigenerazioni inutili e ripetizioni.',
     'Monitor Ollama corretto: stato condiviso su /data così il browser può leggerlo mentre un altro worker esegue la generazione.',
     'Context Ollama fissato a 32K (32768 token).',
     'Timeout della generazione Ollama aumentato da 240 a 600 secondi.',
