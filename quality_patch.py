@@ -182,7 +182,7 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
     endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.4.3: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    cp.base.log(f'Ollama v2.4.4: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
@@ -232,7 +232,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.4.3 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.4.4 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -242,12 +242,14 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.4.3'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.4.4'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.4.3','date':'19 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.4.4','date':'21 settembre 2026','changes':[
+    'Corretto elenco mail obsoleto dopo cancellazione o nuova scansione: Gunicorn usa un solo worker con 4 thread, mantenendo una MAIL_CACHE unica.',
+    'Il monitor Ollama continua ad aggiornarsi durante la generazione grazie ai thread concorrenti.',
     'Controllo lunghezza reso elastico: una bozza valida non viene più scartata per pochi vocaboli sotto l’obiettivo.',
     'Obiettivi di lunghezza Ollama leggermente ridotti per evitare rigenerazioni inutili e ripetizioni.',
     'Monitor Ollama corretto: stato condiviso su /data così il browser può leggerlo mentre un altro worker esegue la generazione.',
