@@ -101,7 +101,7 @@ def runtime_generate_route(index):
         item = cp.fixed.find_item(index, cfg); msg = cp.base.fetch_full_message_for_item(item, cfg)
         original_subject, sender, date = cp.base.get_email_preview(msg); email_body = cp.base.extract_body_from_email(msg)
         attachments, images, documents_text = cp.base.save_attachments_and_extract_text(msg)
-        source_text = f'''OGGETTO EMAIL:\n{original_subject}\n\nMITTENTE:\n{sender}\n\nDATA EMAIL:\n{date}\n\nTESTO DELLA MAIL:\n{email_body}\n\n{documents_text}'''.strip()
+        source_text = f'''OGGETTO EMAIL:\n{original_subject}\n\nMITTENTE:\n{sender}\n\nDATA EMAIL:\n{date}\n\nTESTO DELLA MAIL:\n{email_body}\n\nTESTO ESTRATTO DAI DOCUMENTI ALLEGATI:\n{documents_text or '[Nessun testo da documenti allegati]'}'''.strip()
         document_files = [p for p in attachments if Path(p).suffix.lower() in cp.base.DOCUMENT_EXTENSIONS]
         cp.base.log(f'Fonte preparata per AI: corpo email={_word_count(email_body)} parole; documenti={len(document_files)}; testo allegati={_word_count(documents_text)} parole; totale inviato={_word_count(source_text)} parole.')
         if document_files and not documents_text.strip(): raise RuntimeError('Sono presenti documenti allegati ma non è stato estratto alcun testo. Generazione bloccata per evitare una fonte incompleta.')
