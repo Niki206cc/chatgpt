@@ -60,49 +60,62 @@ def _plain_word_count(html):
 def _source_word_count(text): return len(re.findall(r"\b[\wÀ-ÿ’'-]+\b", str(text or ''), flags=re.UNICODE))
 
 
-def _minimum_article_words(source_text):
+def _article_length_target(source_text):
     words = _source_word_count(source_text)
-    if words >= 1200: return 450
-    if words >= 800: return 350
-    if words >= 500: return 280
-    if words >= 300: return 220
-    if words >= 150: return 130
-    return 70
+    if words >= 1800: return '450-750'
+    if words >= 1000: return '350-650'
+    if words >= 600: return '300-550'
+    if words >= 300: return '220-400'
+    return '120-280'
 
 
-def _free_prompt(source_text, cfg, minimum_words, retry=False, previous_article='', retry_reason=''):
-    editorial = (cfg.get('ollama_prompt') or op.DEFAULT_OLLAMA_PROMPT).strip()
-    editorial = re.sub(r'FORMATO DI RISPOSTA.*$', '', editorial, flags=re.I | re.S).strip()
+def _free_prompt(source_text, cfg, length_target, retry=False, previous_article='', retry_reason=''):
     retry_text = ''
     if retry:
-        previous_article = str(previous_article or '')[:7000]
-        retry_text = f'''\n\nSECONDO TENTATIVO OBBLIGATORIO. La bozza precedente è stata rifiutata: {retry_reason}. Riscrivi l'articolo completamente da zero usando la fonte originale. NON copiare o continuare frasi dalla bozza precedente. Evita qualsiasi ripetizione.\n\nBOZZA PRECEDENTE DA NON COPIARE:\n{previous_article}\n'''
-    return f'''{editorial}
+        retry_text = f"""
+SECONDO TENTATIVO.
+La bozza precedente non è stata accettata per questo motivo: {retry_reason}.
+Riparti esclusivamente dalle FONTI qui sotto e scrivi un nuovo articolo da zero.
+Non cercare di allungare il testo: meglio un articolo più breve e completo che frasi ripetute.
+"""
 
-ISTRUZIONI DI OUTPUT PER OLLAMA:
-Scrivi esclusivamente il titolo e il corpo dell'articolo:
-TITOLO: titolo dell'articolo
+    return f"""Sei un giornalista di Montagne & Paesi.
+
+COMPITO
+Usa ESCLUSIVAMENTE le informazioni presenti nelle FONTI fornite sotto.
+Le FONTI comprendono il testo della mail e, quando presenti, i testi estratti dai documenti allegati.
+Leggi tutto il materiale, elimina le duplicazioni tra mail e allegati e trasformalo in UN SOLO articolo giornalistico pronto per WordPress.
+
+TITOLO
+Scrivi un titolo SEO naturale e giornalistico. Inserisci luogo e notizia principale quando presenti nella fonte.
+Non usare clickbait, virgolette inutili, HTML o Markdown. Non inventare informazioni.
+
+ARTICOLO
+- Apri con la notizia principale: chi, cosa, dove e quando.
+- Usa tutti i fatti utili della mail e degli allegati, senza copiarli meccanicamente.
+- Mantieni esatti nomi, date, orari, luoghi, numeri, cariche e dichiarazioni.
+- Non aggiungere fatti, interpretazioni o dettagli assenti dalle fonti.
+- Non ripetere la stessa informazione, frase o paragrafo.
+- Se mail e allegato dicono la stessa cosa, riportala una volta sola.
+- Non allungare artificialmente l'articolo.
+- Lunghezza indicativa: {length_target} parole, ma termina prima se le informazioni sono finite.
+- Scrivi in italiano corretto, stile giornalistico chiaro e diretto.
+- HTML WordPress semplice: usa soprattutto <p>...</p>; <strong> solo quando utile.
+- Non scrivere SEO, keyword, note, fonti, analisi o spiegazioni dopo l'articolo.
+- Non usare Markdown.
+
+FORMATO ESATTO:
+TITOLO: [titolo]
 ARTICOLO:
-<p>primo paragrafo...</p>
-<p>altri paragrafi...</p>
+<p>testo...</p>
+<p>testo...</p>
 
-REGOLE OBBLIGATORIE:
-- HTML WordPress semplice e valido. Usa soprattutto <p>, eventualmente <strong>, <h2>, <h3>, <ul>, <li>, <blockquote> e <a href="URL">.
-- Ogni paragrafo deve essere chiuso correttamente con </p>. Non inventare tag come <pp> e non inserire testo dentro i tag di chiusura.
-- Non ripetere mai la stessa frase, lo stesso paragrafo, lo stesso orario o la stessa informazione per aumentare la lunghezza.
-- Se hai esaurito le informazioni della fonte, termina l'articolo: NON riempire lo spazio con ripetizioni.
-- Non usare Markdown: niente **, ##, ---, ``` o [testo](URL).
-- Non aggiungere SEO, keyword, località, stile, note, analisi, meta description, LINK o FONTI.
-- Dopo l'ultimo paragrafo non scrivere altro.
-- Correggi grammatica e sintassi italiane prima di terminare la risposta.
-
-Obiettivo: almeno {minimum_words} parole SOLO se la fonte contiene abbastanza informazioni. La qualità e la non ripetizione hanno priorità sulla lunghezza. Mantieni accuratamente fatti, date, luoghi, persone, ruoli, numeri, dichiarazioni e link della fonte. Non inventare nulla.{retry_text}
-
-DATA REALE DI OGGI:
+{retry_text}
+DATA DI OGGI:
 {cp.base.italian_today_string()}
 
-FONTE ORIGINALE COMPLETA:
-{source_text}'''.strip()
+FONTI COMPLETE (MAIL + TESTI ESTRATTI DAGLI ALLEGATI):
+{source_text}""".strip()
 
 
 def _clean_article_output(article):
@@ -155,7 +168,7 @@ def _quality_issue(article, source_text):
     sentences = [_normalize_sentence(s) for s in re.split(r'(?<=[.!?])\s+', plain)]
     sentences = [s for s in sentences if len(s.split()) >= 8]
     counts = Counter(sentences)
-    repeated = [(s,c) for s,c in counts.items() if c >= 2]
+    repeated = [(s,c) for s,c in counts.items() if c >= 3]
     if repeated:
         worst = max(repeated, key=lambda x: x[1])
         return f'frase ripetuta {worst[1]} volte: {worst[0][:120]}'
@@ -165,7 +178,7 @@ def _quality_issue(article, source_text):
     if len(words) >= 40:
         grams = Counter(tuple(words[i:i+10]) for i in range(len(words)-9))
         max_repeat = max(grams.values(), default=1)
-        if max_repeat >= 3: return f'sequenza di testo ripetuta {max_repeat} volte'
+        if max_repeat >= 4: return f'sequenza di testo ripetuta {max_repeat} volte'
 
     source_words = max(_source_word_count(source_text), 1)
     article_words = len(words)
@@ -179,15 +192,15 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     if not base_url: raise RuntimeError('Configura l’URL di Ollama nella dashboard.')
     if not model: raise RuntimeError('Configura il modello Ollama nella dashboard.')
     temperature = op._float_value(cfg.get('ollama_temperature'), 0.3, 0.0, 2.0); top_p = op._float_value(cfg.get('ollama_top_p'), 0.9, 0.0, 1.0)
-    configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 8192, 1024, 8192); first_tokens = min(max(configured_tokens, 4096), 8192); second_tokens = 8192
-    endpoint = base_url + '/api/generate'; minimum_words = _minimum_article_words(source_text); last_reason = 'risposta non valida'; previous_article = ''
+    configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 4096, 1024, 4096); first_tokens = min(max(configured_tokens, 3072), 4096); second_tokens = 4096
+    endpoint = base_url + '/api/generate'; length_target = _article_length_target(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.4.4: fonte={_source_word_count(source_text)} parole; minimo={minimum_words}; max output={first_tokens}/{second_tokens}; controllo ripetizioni+HTML attivo.')
+    cp.base.log(f'Ollama v2.5.0: fonte={_source_word_count(source_text)} parole; lunghezza indicativa={length_target}; max output={first_tokens}/{second_tokens}; prompt editoriale semplificato.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
         try:
-            result = op._ollama_request(endpoint, model, _free_prompt(source_text, cfg, minimum_words, attempt == 2, previous_article, last_reason), temperature, top_p, tokens, structured=False)
+            result = op._ollama_request(endpoint, model, _free_prompt(source_text, cfg, length_target, attempt == 2, '', last_reason), temperature, top_p, tokens, structured=False)
         except TimeoutError as exc:
             _job_update(job_id, 'Timeout: Ollama non ha completato la generazione entro 600 secondi.', 100, 'error')
             raise RuntimeError('Ollama ha impiegato più di 600 secondi per completare la generazione.') from exc
@@ -208,15 +221,15 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
             last_reason = issue; previous_article = article
             cp.base.log(f'Ollama qualità: bozza rifiutata al tentativo {attempt}/2: {issue}.'); _job_update(job_id, f'Bozza rifiutata: {issue}. Avvio rigenerazione.' if attempt == 1 else f'Bozza rifiutata: {issue}.', 60 if attempt == 1 else 95)
             continue
-        if words < minimum_words:
-            deficit = minimum_words - words
-            tolerance = max(20, int(minimum_words * 0.10))
-            if deficit <= tolerance:
-                cp.base.log(f'Ollama qualità: articolo sotto il minimo di sole {deficit} parole ({words}/{minimum_words}); accettato entro tolleranza.')
-                _job_update(job_id, f'Articolo di {words} parole: leggermente sotto l’obiettivo ma entro tolleranza, accettato.', 95)
-            else:
-                last_reason = f'articolo troppo breve: {words} parole, obiettivo {minimum_words}'; previous_article = article
-                cp.base.log(f'Ollama qualità: {last_reason}.'); _job_update(job_id, last_reason + ('. Rigenerazione...' if attempt == 1 else ''), 60 if attempt == 1 else 95); continue
+        # Nessun minimo editoriale rigido: un articolo conciso ma completo è valido.
+        # Blocchiamo solo risposte chiaramente monche rispetto a una fonte sostanziosa.
+        source_words = _source_word_count(source_text)
+        hard_floor = 120 if source_words >= 500 else 70
+        if words < hard_floor:
+            last_reason = f'articolo chiaramente incompleto: {words} parole'
+            cp.base.log(f'Ollama qualità: {last_reason}.')
+            _job_update(job_id, last_reason + ('. Rigenerazione da zero...' if attempt == 1 else ''), 60 if attempt == 1 else 95)
+            continue
         _job_update(job_id, f'Articolo verificato: {words} parole, HTML valido e nessuna ripetizione.', 95)
         cp.base.log(f'Ollama qualità: articolo accettato al tentativo {attempt}/2 ({words} parole), HTML e ripetizioni verificati.')
         return title, article
@@ -232,7 +245,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.4.4 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.5.0 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -242,12 +255,18 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.4.4'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.5.0'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.4.4','date':'21 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.5.0','date':'29 settembre 2026','changes':[
+    'Prompt Ollama riscritto e semplificato: usa esplicitamente testo mail e testo estratto dagli allegati per creare un unico articolo.',
+    'Titolo richiesto in forma SEO naturale e articolo WordPress basato esclusivamente sulle fonti.',
+    'Eliminato il minimo rigido di parole: gli articoli concisi ma completi non vengono più scartati.',
+    'Secondo tentativo sempre da zero: la bozza difettosa non viene più reinserita nel prompt.',
+    'Controllo anti-loop meno aggressivo sulle ripetizioni occasionali ma mantiene il blocco sui veri loop.',
+    'Output massimo ridotto a 4096 token per diminuire tempi e rischio di degenerazione del modello.',
     'Corretto elenco mail obsoleto dopo cancellazione o nuova scansione: Gunicorn usa un solo worker con 4 thread, mantenendo una MAIL_CACHE unica.',
     'Il monitor Ollama continua ad aggiornarsi durante la generazione grazie ai thread concorrenti.',
     'Controllo lunghezza reso elastico: una bozza valida non viene più scartata per pochi vocaboli sotto l’obiettivo.',
