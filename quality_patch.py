@@ -105,10 +105,10 @@ ARTICOLO
 - Non usare Markdown.
 
 FORMATO ESATTO:
-TITOLO: [titolo]
-ARTICOLO:
-<p>testo...</p>
-<p>testo...</p>
+Restituisci SOLO un oggetto JSON valido con questi due campi:
+{"titolo":"Titolo SEO dell'articolo","articolo":"Testo completo dell'articolo in paragrafi di testo semplice"}
+Non inserire blocchi markdown, commenti o testo prima/dopo il JSON.
+Nel campo articolo NON usare HTML: scrivi solo testo semplice separando i paragrafi con righe vuote.
 
 {retry_text}
 DATA DI OGGI:
@@ -137,14 +137,53 @@ def _clean_article_output(article):
     return text.replace('**', '').replace('__', '').strip()
 
 
+def _article_text_to_html(text):
+    plain = str(text or '').strip()
+    # Se il modello restituisce comunque HTML, recuperiamo il testo senza bocciarlo.
+    if '<' in plain and '>' in plain:
+        plain = BeautifulSoup(plain, 'html.parser').get_text('\n\n', strip=True)
+    paragraphs = [re.sub(r'\s+', ' ', p).strip() for p in re.split(r'\n\s*\n+', plain) if p.strip()]
+    if len(paragraphs) <= 1 and plain:
+        # Fallback: divide sulle frasi solo per evitare un unico blocco enorme.
+        sentences = re.split(r'(?<=[.!?])\s+', re.sub(r'\s+', ' ', plain))
+        paragraphs = [' '.join(sentences[i:i+3]).strip() for i in range(0, len(sentences), 3) if sentences[i:i+3]]
+    import html
+    return '\n'.join(f'<p>{html.escape(p, quote=False)}</p>' for p in paragraphs if p)
+
+
 def _parse_free_output(raw):
     text = str(raw or '').strip()
-    text = re.sub(r'^```(?:html|text)?\s*', '', text, flags=re.I); text = re.sub(r'\s*```$', '', text)
+    text = re.sub(r'^\x60\x60\x60(?:json|text)?\s*', '', text, flags=re.I)
+    text = re.sub(r'\s*\x60\x60\x60$', '', text)
+    # Percorso principale: JSON. Così il modello non deve generare HTML corretto.
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            title = cp.base.clean_title(str(data.get('titolo') or data.get('title') or '').strip())
+            article_text = str(data.get('articolo') or data.get('article') or '').strip()
+            if title and article_text:
+                return title, _article_text_to_html(article_text)
+    except Exception:
+        pass
+    # Recupero tollerante se Ollama aggiunge testo attorno al JSON.
+    match_json = re.search(r'\{.*\}', text, flags=re.S)
+    if match_json:
+        try:
+            data = json.loads(match_json.group(0))
+            title = cp.base.clean_title(str(data.get('titolo') or data.get('title') or '').strip())
+            article_text = str(data.get('articolo') or data.get('article') or '').strip()
+            if title and article_text:
+                return title, _article_text_to_html(article_text)
+        except Exception:
+            pass
+    # Compatibilità con vecchio TITOLO / ARTICOLO.
     match = re.search(r'TITOLO\s*:\s*(.*?)\s*ARTICOLO\s*:\s*(.+)', text, flags=re.I | re.S)
-    if not match: return None
-    title = cp.base.clean_title(match.group(1).strip().replace('**','').replace('__',''))
-    article = _clean_article_output(match.group(2))
-    return (title, article) if title and article else None
+    if match:
+        title = cp.base.clean_title(match.group(1).strip())
+        article_text = _clean_article_output(match.group(2))
+        if title and article_text:
+            return title, _article_text_to_html(article_text)
+    return None
 
 
 def _normalize_sentence(sentence):
@@ -195,12 +234,12 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 4096, 1024, 4096); first_tokens = min(max(configured_tokens, 3072), 4096); second_tokens = 4096
     endpoint = base_url + '/api/generate'; length_target = _article_length_target(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.5.0: fonte={_source_word_count(source_text)} parole; lunghezza indicativa={length_target}; max output={first_tokens}/{second_tokens}; prompt editoriale semplificato.')
+    cp.base.log(f'Ollama v2.5.1: fonte={_source_word_count(source_text)} parole; lunghezza indicativa={length_target}; max output={first_tokens}/{second_tokens}; prompt editoriale semplificato.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
         try:
-            result = op._ollama_request(endpoint, model, _free_prompt(source_text, cfg, length_target, attempt == 2, '', last_reason), temperature, top_p, tokens, structured=False)
+            result = op._ollama_request(endpoint, model, _free_prompt(source_text, cfg, length_target, attempt == 2, '', last_reason), temperature, top_p, tokens, structured=True)
         except TimeoutError as exc:
             _job_update(job_id, 'Timeout: Ollama non ha completato la generazione entro 600 secondi.', 100, 'error')
             raise RuntimeError('Ollama ha impiegato più di 600 secondi per completare la generazione.') from exc
@@ -245,7 +284,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.5.0 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.5.1 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -255,12 +294,15 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.5.0'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.5.1'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.5.0','date':'29 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.5.1','date':'29 settembre 2026','changes':[
+    'Ollama ora restituisce JSON strutturato con titolo e articolo: eliminati gli errori dovuti al formato TITOLO/ARTICOLO.',
+    'Ollama scrive il corpo in testo semplice; l’HTML WordPress viene creato dal programma, eliminando gli errori di tag sbilanciati.',
+    'Parser tollerante mantiene compatibilità con le vecchie risposte TITOLO/ARTICOLO.',
     'Prompt Ollama riscritto e semplificato: usa esplicitamente testo mail e testo estratto dagli allegati per creare un unico articolo.',
     'Titolo richiesto in forma SEO naturale e articolo WordPress basato esclusivamente sulle fonti.',
     'Eliminato il minimo rigido di parole: gli articoli concisi ma completi non vengono più scartati.',
