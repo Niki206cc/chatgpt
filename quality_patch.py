@@ -234,7 +234,7 @@ def generate_article_ollama_quality(source_text, cfg, job_id=None):
     configured_tokens = op._int_value(cfg.get('ollama_max_tokens'), 4096, 1024, 4096); first_tokens = min(max(configured_tokens, 3072), 4096); second_tokens = 4096
     endpoint = base_url + '/api/generate'; length_target = _article_length_target(source_text); last_reason = 'risposta non valida'; previous_article = ''
     _job_update(job_id, f'Fonte preparata: {_source_word_count(source_text)} parole. Invio a Ollama...', 15)
-    cp.base.log(f'Ollama v2.5.2: fonte={_source_word_count(source_text)} parole; lunghezza indicativa={length_target}; max output={first_tokens}/{second_tokens}; prompt editoriale semplificato.')
+    cp.base.log(f'Ollama v2.5.3: fonte={_source_word_count(source_text)} parole; lunghezza indicativa={length_target}; max output={first_tokens}/{second_tokens}; prompt editoriale semplificato.')
     for attempt in (1,2):
         tokens = first_tokens if attempt == 1 else second_tokens
         _job_update(job_id, f'Tentativo {attempt}/2: Ollama sta elaborando la fonte (context 32K, output max {tokens} token)...', 25 if attempt == 1 else 65)
@@ -284,7 +284,7 @@ def generate_route_with_quality(index):
     cp.base.generate_article = lambda source_text, cfg: generate_article_ollama_quality(source_text, cfg, job_id)
     try:
         _job_update(job_id, 'Richiesta ricevuta dal programma. Preparazione comunicato e allegati...', 5)
-        cp.base.log(f'Generazione articolo con Ollama v2.5.2 richiesta per mail {index}')
+        cp.base.log(f'Generazione articolo con Ollama v2.5.3 richiesta per mail {index}')
         response = _original_generate_route(index)
         _job_update(job_id, 'Generazione completata. Apertura anteprima...', 100, 'done')
         return response
@@ -294,12 +294,14 @@ def generate_route_with_quality(index):
     finally: cp.base.generate_article = original_generator
 
 app.view_functions['generate_route'] = generate_route_with_quality
-RUNTIME_APP_VERSION = '2.5.2'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
+RUNTIME_APP_VERSION = '2.5.3'; cp.APP_VERSION = RUNTIME_APP_VERSION; op.RUNTIME_APP_VERSION = RUNTIME_APP_VERSION
 
 @app.context_processor
 def inject_quality_patch_version(): return {'app_version': RUNTIME_APP_VERSION}
 
-cp.CHANGELOG.insert(0, {'version':'2.5.2','date':'29 settembre 2026','changes':[
+cp.CHANGELOG.insert(0, {'version':'2.5.3','date':'1 ottobre 2026','changes':[
+    'Aggiunto nella schermata della mail il box Testo aggiuntivo manuale per incollare contenuti non estratti, inclusi documenti dentro ZIP.',
+    'Il testo manuale viene aggiunto alle fonti utilizzate sia dal motore AI principale sia da Ollama.',
     'Corretto errore Python nel prompt JSON: le parentesi graffe dell’esempio sono ora escapate correttamente nella f-string.',
     'Ollama ora restituisce JSON strutturato con titolo e articolo: eliminati gli errori dovuti al formato TITOLO/ARTICOLO.',
     'Ollama scrive il corpo in testo semplice; l’HTML WordPress viene creato dal programma, eliminando gli errori di tag sbilanciati.',
